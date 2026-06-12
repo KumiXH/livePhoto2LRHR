@@ -1,0 +1,30 @@
+task:
+  name: livephoto_frame_select
+  seed: 42
+
+data:
+  input_dir: D:/SR数据集/花
+  output_dir: D:/SR数据集/花_pairs
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - frame_select
+
+frame_select:
+  algorithm: dinov2_similarity
+  device: auto
+  sample_fps: 15
+  top_k: 5
+  batch_size: 16
+  resize_short_side: 512
+  score_fusion:
+    feature_weight: 0.7
+    edge_weight: 0.3
+
+output:
+  save_metadata: true
+  overwrite: false
