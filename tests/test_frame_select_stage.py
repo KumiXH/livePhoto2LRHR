@@ -1,11 +1,49 @@
 from pathlib import Path
 
+import numpy as np
 import yaml
 from PIL import Image
 
+from livephoto2lrhr.algorithms.similarity.base import FrameCandidate, FrameSelectionResult
 from livephoto2lrhr.algorithms.similarity.fake import FakeFrameSelector
 from livephoto2lrhr.data.pairing import SamplePair
+import livephoto2lrhr.stages.frame_select as frame_select
 from livephoto2lrhr.stages.frame_select import FrameSelectStage
+
+
+class TrackingSelector:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def select(self, image_path: Path, video_path: Path) -> FrameSelectionResult:
+        self.calls += 1
+        candidate = FrameCandidate(frame_index=0, timestamp_sec=0.0, score=1.0)
+        return FrameSelectionResult(
+            frame_rgb=np.zeros((4, 4, 3), dtype=np.uint8),
+            selected=candidate,
+            top_k=[candidate],
+            diagnostics={},
+        )
+
+
+class DiagnosticsSelector:
+    def select(self, image_path: Path, video_path: Path) -> FrameSelectionResult:
+        candidate = FrameCandidate(frame_index=0, timestamp_sec=0.0, score=1.0)
+        return FrameSelectionResult(
+            frame_rgb=np.zeros((4, 4, 3), dtype=np.uint8),
+            selected=candidate,
+            top_k=[candidate],
+            diagnostics={
+                "score": np.float32(0.5),
+                "vector": np.array([1, 2, 3], dtype=np.int64),
+                "path": Path("diagnostics") / "source.npy",
+            },
+        )
+
+
+class RaisingSelector:
+    def select(self, image_path: Path, video_path: Path) -> FrameSelectionResult:
+        raise RuntimeError("selector exploded")
 
 
 def test_frame_select_stage_writes_mirrored_lr_hr_and_metadata(
@@ -62,7 +100,7 @@ def test_frame_select_stage_respects_overwrite_false(
         video_path=video_path,
         relative_stem=Path("flower"),
     )
-    selector = FakeFrameSelector({"top_k": 1})
+    selector = TrackingSelector()
     stage = FrameSelectStage(
         output_dir=output_dir,
         output_ext=".png",
@@ -77,3 +115,129 @@ def test_frame_select_stage_respects_overwrite_false(
 
     assert first.status == "success"
     assert second.status == "skipped_existing"
+    assert selector.calls == 1
+
+
+def test_frame_select_stage_writes_yaml_safe_diagnostics(
+    tmp_path: Path,
+    tiny_pair: tuple[Path, Path],
+):
+    image_path, video_path = tiny_pair
+    output_dir = tmp_path / "output"
+    pair = SamplePair(
+        sample_id="flower",
+        image_path=image_path,
+        video_path=video_path,
+        relative_stem=Path("flower"),
+    )
+    stage = FrameSelectStage(
+        output_dir=output_dir,
+        output_ext=".png",
+        overwrite=False,
+        save_metadata=True,
+        selector=DiagnosticsSelector(),
+        algorithm_name="diagnostics_selector",
+    )
+
+    result = stage.run(pair)
+
+    metadata_path = output_dir / "metadata" / "flower.yaml"
+    metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+    diagnostics = metadata["frame_select"]["diagnostics"]
+    assert result.status == "success"
+    assert diagnostics == {
+        "score": 0.5,
+        "vector": [1, 2, 3],
+        "path": str(Path("diagnostics") / "source.npy"),
+    }
+
+
+def test_frame_select_stage_reports_selector_errors_as_frame_select_failed(
+    tmp_path: Path,
+    tiny_pair: tuple[Path, Path],
+):
+    image_path, video_path = tiny_pair
+    stage = FrameSelectStage(
+        output_dir=tmp_path / "output",
+        output_ext=".png",
+        overwrite=False,
+        save_metadata=True,
+        selector=RaisingSelector(),
+        algorithm_name="raising_selector",
+    )
+
+    result = stage.run(
+        SamplePair(
+            sample_id="flower",
+            image_path=image_path,
+            video_path=video_path,
+            relative_stem=Path("flower"),
+        )
+    )
+
+    assert result.status == "frame_select_failed"
+    assert "selector exploded" in result.message
+
+
+def test_frame_select_stage_reports_write_errors_as_write_failed(
+    monkeypatch,
+    tmp_path: Path,
+    tiny_pair: tuple[Path, Path],
+):
+    image_path, video_path = tiny_pair
+
+    def raise_write_error(path: Path, data: dict[str, object]) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(frame_select, "write_yaml", raise_write_error)
+    stage = FrameSelectStage(
+        output_dir=tmp_path / "output",
+        output_ext=".png",
+        overwrite=False,
+        save_metadata=True,
+        selector=FakeFrameSelector({"top_k": 1}),
+        algorithm_name="fake_selector",
+    )
+
+    result = stage.run(
+        SamplePair(
+            sample_id="flower",
+            image_path=image_path,
+            video_path=video_path,
+            relative_stem=Path("flower"),
+        )
+    )
+
+    assert result.status == "write_failed"
+    assert "disk full" in result.message
+
+
+def test_frame_select_stage_recreates_missing_metadata_when_overwrite_false(
+    tmp_path: Path,
+    tiny_pair: tuple[Path, Path],
+):
+    image_path, video_path = tiny_pair
+    output_dir = tmp_path / "output"
+    pair = SamplePair(
+        sample_id="flower",
+        image_path=image_path,
+        video_path=video_path,
+        relative_stem=Path("flower"),
+    )
+    stage = FrameSelectStage(
+        output_dir=output_dir,
+        output_ext=".png",
+        overwrite=False,
+        save_metadata=True,
+        selector=FakeFrameSelector({"top_k": 1}),
+        algorithm_name="fake_selector",
+    )
+
+    first = stage.run(pair)
+    metadata_path = output_dir / "metadata" / "flower.yaml"
+    metadata_path.unlink()
+    second = stage.run(pair)
+
+    assert first.status == "success"
+    assert second.status == "success"
+    assert metadata_path.exists()

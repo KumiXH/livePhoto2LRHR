@@ -45,11 +45,18 @@ class FrameSelectStage:
         hr_path = output_image_path(self.output_dir, "HR", pair.relative_stem, self.output_ext)
         meta_path = metadata_path(self.output_dir, pair.relative_stem)
 
-        if not self.overwrite and lr_path.exists() and hr_path.exists():
+        has_required_outputs = lr_path.exists() and hr_path.exists() and (
+            not self.save_metadata or meta_path.exists()
+        )
+        if not self.overwrite and has_required_outputs:
             return StageResult(sample_id=pair.sample_id, status="skipped_existing")
 
         try:
             selection = self.selector.select(pair.image_path, pair.video_path)
+        except Exception as exc:
+            return StageResult(sample_id=pair.sample_id, status="frame_select_failed", message=str(exc))
+
+        try:
             save_rgb_array(selection.frame_rgb, lr_path)
             save_pil_image(pair.image_path, hr_path)
             if self.save_metadata:
@@ -78,6 +85,6 @@ class FrameSelectStage:
                     },
                 )
         except Exception as exc:
-            return StageResult(sample_id=pair.sample_id, status="frame_select_failed", message=str(exc))
+            return StageResult(sample_id=pair.sample_id, status="write_failed", message=str(exc))
 
         return StageResult(sample_id=pair.sample_id, status="success")
