@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, Generic, TypeVar
 
 
 T = TypeVar("T")
 
 
-class Registry:
+class Registry(Generic[T]):
     def __init__(self) -> None:
         self._items: dict[str, Callable[[dict[str, Any]], T]] = {}
 

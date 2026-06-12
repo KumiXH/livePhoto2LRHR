@@ -11,6 +11,8 @@ from livephoto2lrhr.algorithms.similarity.base import FrameCandidate, FrameSelec
 class FakeFrameSelector:
     def __init__(self, config: dict[str, Any]) -> None:
         self.top_k = int(config.get("top_k", 1))
+        if self.top_k < 1:
+            raise ValueError("top_k must be at least 1")
 
     def select(self, image_path: Path, video_path: Path) -> FrameSelectionResult:
         candidates = [
