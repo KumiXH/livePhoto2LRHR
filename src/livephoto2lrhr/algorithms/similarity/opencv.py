@@ -18,9 +18,11 @@ class OpenCVSimilaritySelector:
         fusion = config.get("score_fusion") or {}
         self.feature_weight = float(fusion.get("feature_weight", 0.7))
         self.edge_weight = float(fusion.get("edge_weight", 0.3))
+        self._validate_config()
 
     def select(self, image_path: Path, video_path: Path) -> FrameSelectionResult:
-        target = np.array(ImageOps.exif_transpose(Image.open(image_path)).convert("RGB"))
+        with Image.open(image_path) as image:
+            target = np.array(ImageOps.exif_transpose(image).convert("RGB"))
         target_small = self._resize_for_score(target)
         target_gray = cv2.cvtColor(target_small, cv2.COLOR_RGB2GRAY)
         target_edges = cv2.Canny(target_gray, 80, 160)
@@ -31,38 +33,42 @@ class OpenCVSimilaritySelector:
 
         fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
         frame_step = max(int(round(fps / self.sample_fps)), 1)
-        candidates: list[tuple[FrameCandidate, np.ndarray]] = []
+        candidates: list[FrameCandidate] = []
+        best_candidate: FrameCandidate | None = None
+        best_frame_rgb: np.ndarray | None = None
         frame_index = 0
 
-        while True:
-            ok, frame_bgr = capture.read()
-            if not ok:
-                break
-            if frame_index % frame_step == 0:
-                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                score = self._score(target_small, target_edges, frame_rgb)
-                candidates.append(
-                    (
-                        FrameCandidate(
-                            frame_index=frame_index,
-                            timestamp_sec=frame_index / fps,
-                            score=score,
-                        ),
-                        frame_rgb,
+        try:
+            while True:
+                ok, frame_bgr = capture.read()
+                if not ok:
+                    break
+                if frame_index % frame_step == 0:
+                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                    score = self._score(target_small, target_edges, frame_rgb)
+                    candidate = FrameCandidate(
+                        frame_index=frame_index,
+                        timestamp_sec=frame_index / fps,
+                        score=score,
                     )
-                )
-            frame_index += 1
-
-        capture.release()
+                    candidates.append(candidate)
+                    if best_candidate is None or candidate.score > best_candidate.score:
+                        best_candidate = candidate
+                        best_frame_rgb = frame_rgb.copy()
+                frame_index += 1
+        finally:
+            capture.release()
 
         if not candidates:
             raise ValueError(f"video contained no readable frames: {video_path}")
 
-        candidates.sort(key=lambda item: item[0].score, reverse=True)
-        selected, frame_rgb = candidates[0]
-        top_k = [candidate for candidate, _ in candidates[: self.top_k]]
+        candidates.sort(key=lambda candidate: candidate.score, reverse=True)
+        selected = candidates[0]
+        top_k = candidates[: self.top_k]
+        if best_frame_rgb is None:
+            raise ValueError(f"video contained no readable frames: {video_path}")
         return FrameSelectionResult(
-            frame_rgb=frame_rgb,
+            frame_rgb=best_frame_rgb,
             selected=selected,
             top_k=top_k,
             diagnostics={
@@ -72,6 +78,26 @@ class OpenCVSimilaritySelector:
                 "scored_frames": len(candidates),
             },
         )
+
+    def _validate_config(self) -> None:
+        if not np.isfinite(self.sample_fps):
+            raise ValueError("sample_fps must be finite")
+        if self.sample_fps <= 0:
+            raise ValueError("sample_fps must be greater than 0")
+        if self.top_k < 1:
+            raise ValueError("top_k must be at least 1")
+        if self.resize_short_side < 1:
+            raise ValueError("resize_short_side must be at least 1")
+        self._validate_weight("feature_weight", self.feature_weight)
+        self._validate_weight("edge_weight", self.edge_weight)
+        if self.feature_weight == 0 and self.edge_weight == 0:
+            raise ValueError("at least one score fusion weight must be greater than 0")
+
+    def _validate_weight(self, name: str, value: float) -> None:
+        if not np.isfinite(value):
+            raise ValueError(f"{name} must be finite")
+        if value < 0:
+            raise ValueError(f"{name} must be non-negative")
 
     def _resize_for_score(self, image_rgb: np.ndarray) -> np.ndarray:
         height, width = image_rgb.shape[:2]
