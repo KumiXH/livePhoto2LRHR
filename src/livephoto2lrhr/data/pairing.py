@@ -59,14 +59,14 @@ def discover_pairs(
         sample_id = _sample_id(relative_stem)
         image_matches = images.get(relative_stem, [])
         video_matches = videos.get(relative_stem, [])
+        if len(image_matches) > 1 or len(video_matches) > 1:
+            ambiguous.append(sample_id)
+            continue
         if not image_matches:
             missing_images.append(sample_id)
             continue
         if not video_matches:
             missing_videos.append(sample_id)
-            continue
-        if len(image_matches) > 1 or len(video_matches) > 1:
-            ambiguous.append(sample_id)
             continue
         pairs.append(
             SamplePair(

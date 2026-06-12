@@ -63,3 +63,37 @@ def test_discover_pairs_can_ignore_nested_files_when_not_recursive(tmp_path: Pat
     )
 
     assert [sample.sample_id for sample in result.pairs] == ["root"]
+
+
+def test_discover_pairs_reports_duplicate_images_without_video_as_ambiguous(
+    tmp_path: Path,
+):
+    touch(tmp_path / "dup_image.jpg")
+    touch(tmp_path / "dup_image.png")
+
+    result = discover_pairs(
+        tmp_path,
+        image_exts=(".jpg", ".png"),
+        video_exts=(".mp4",),
+        recursive=True,
+    )
+
+    assert result.ambiguous == ["dup_image"]
+    assert result.missing_videos == []
+
+
+def test_discover_pairs_reports_duplicate_videos_without_image_as_ambiguous(
+    tmp_path: Path,
+):
+    touch(tmp_path / "dup_video.mp4")
+    touch(tmp_path / "dup_video.mov")
+
+    result = discover_pairs(
+        tmp_path,
+        image_exts=(".jpg",),
+        video_exts=(".mp4", ".mov"),
+        recursive=True,
+    )
+
+    assert result.ambiguous == ["dup_video"]
+    assert result.missing_images == []
