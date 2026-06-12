@@ -10,11 +10,11 @@ from livephoto2lrhr.algorithms.similarity.base import FrameCandidate
 
 
 def output_image_path(output_dir: Path, folder: str, relative_stem: Path, output_ext: str) -> Path:
-    return output_dir / folder / relative_stem.with_suffix(output_ext)
+    return output_dir / folder / relative_stem.parent / f"{relative_stem.name}{output_ext}"
 
 
 def metadata_path(output_dir: Path, relative_stem: Path) -> Path:
-    return output_dir / "metadata" / relative_stem.with_suffix(".yaml")
+    return output_dir / "metadata" / relative_stem.parent / f"{relative_stem.name}.yaml"
 
 
 def save_pil_image(source_path: Path, destination_path: Path) -> None:

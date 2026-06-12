@@ -88,6 +88,36 @@ def test_frame_select_stage_writes_mirrored_lr_hr_and_metadata(
     assert sorted(path.name for path in (output_dir / "LR" / "nested").iterdir()) == ["flower.png"]
 
 
+def test_frame_select_stage_preserves_dotted_relative_stems(
+    tmp_path: Path,
+    tiny_pair: tuple[Path, Path],
+):
+    image_path, video_path = tiny_pair
+    output_dir = tmp_path / "output"
+    pair = SamplePair(
+        sample_id="nested/IMG.0001",
+        image_path=image_path,
+        video_path=video_path,
+        relative_stem=Path("nested") / "IMG.0001",
+    )
+    stage = FrameSelectStage(
+        output_dir=output_dir,
+        output_ext=".png",
+        overwrite=False,
+        save_metadata=True,
+        selector=FakeFrameSelector({"top_k": 1}),
+        algorithm_name="fake_selector",
+    )
+
+    result = stage.run(pair)
+
+    assert result.status == "success"
+    assert (output_dir / "LR" / "nested" / "IMG.0001.png").exists()
+    assert (output_dir / "HR" / "nested" / "IMG.0001.png").exists()
+    assert (output_dir / "metadata" / "nested" / "IMG.0001.yaml").exists()
+    assert not (output_dir / "LR" / "nested" / "IMG.png").exists()
+
+
 def test_frame_select_stage_respects_overwrite_false(
     tmp_path: Path,
     tiny_pair: tuple[Path, Path],
