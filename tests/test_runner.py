@@ -44,5 +44,35 @@ def test_run_pipeline_reports_missing_pairs(tmp_path: Path):
 
     summary = run_pipeline(config)
 
-    assert summary["counts"]["success"] == 0
+    assert summary["counts"] == {
+        "success": 0,
+        "skipped_existing": 0,
+        "frame_select_failed": 0,
+        "write_failed": 0,
+    }
     assert summary["pair_discovery"]["missing_videos"] == ["image_only"]
+
+
+def test_run_pipeline_preserves_ambiguous_pairs_in_summary(tmp_path: Path):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    (input_dir / "duplicate.jpg").write_bytes(b"x")
+    (input_dir / "duplicate.jpeg").write_bytes(b"x")
+    (input_dir / "duplicate.mp4").write_bytes(b"x")
+    output_dir = tmp_path / "output"
+    config = AppConfig(
+        data=DataConfig(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            image_exts=(".jpg", ".jpeg"),
+            video_exts=(".mp4",),
+        ),
+        pipeline=PipelineConfig(stages=("frame_select",)),
+        frame_select=FrameSelectConfig(algorithm="fake_selector", top_k=1),
+        output=OutputConfig(save_metadata=True, overwrite=False),
+        raw={"test": True},
+    )
+
+    summary = run_pipeline(config)
+
+    assert summary["pair_discovery"]["ambiguous"] == ["duplicate"]

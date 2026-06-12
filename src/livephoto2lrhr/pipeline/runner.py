@@ -10,6 +10,9 @@ from livephoto2lrhr.data.pairing import discover_pairs
 from livephoto2lrhr.stages.frame_select import FrameSelectStage
 
 
+KNOWN_PHASE_1_STATUSES = ("success", "skipped_existing", "frame_select_failed", "write_failed")
+
+
 def run_pipeline(config: AppConfig) -> dict[str, Any]:
     pair_result = discover_pairs(
         config.data.input_dir,
@@ -17,7 +20,7 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         video_exts=config.data.video_exts,
         recursive=config.data.recursive,
     )
-    counts: Counter[str] = Counter({"success": 0})
+    counts: Counter[str] = Counter({status: 0 for status in KNOWN_PHASE_1_STATUSES})
     samples: list[dict[str, str]] = []
 
     if "frame_select" in config.pipeline.stages:
