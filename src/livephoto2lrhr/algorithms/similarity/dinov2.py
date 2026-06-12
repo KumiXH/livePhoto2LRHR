@@ -53,7 +53,8 @@ class DINOv2SimilaritySelector:
         self.device = resolve_device(requested_device)
         self.torch = _import_torch()
         self.transform = _build_transform(self.resize_short_side)
-        self.model = self.torch.hub.load("facebookresearch/dinov2", "dinov2_vits14").eval().to(self.device)
+        self.model_name = "dinov2_vits14"
+        self.model = self.torch.hub.load("facebookresearch/dinov2", self.model_name).eval().to(self.device)
 
     def select(self, image_path: Path, video_path: Path) -> FrameSelectionResult:
         with Image.open(image_path) as image:
@@ -61,17 +62,17 @@ class DINOv2SimilaritySelector:
             target_feature = self._extract_feature(target_image)
 
         capture = cv2.VideoCapture(str(video_path))
-        if not capture.isOpened():
-            raise ValueError(f"could not open video: {video_path}")
-
-        fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
-        frame_step = max(int(round(fps / self.sample_fps)), 1)
-        candidate_features: list[tuple[FrameCandidate, Any]] = []
+        candidates: list[FrameCandidate] = []
         best_candidate: FrameCandidate | None = None
         best_frame_rgb: np.ndarray | None = None
         frame_index = 0
 
         try:
+            if not capture.isOpened():
+                raise ValueError(f"could not open video: {video_path}")
+
+            fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+            frame_step = max(int(round(fps / self.sample_fps)), 1)
             while True:
                 ok, frame_bgr = capture.read()
                 if not ok:
@@ -79,28 +80,24 @@ class DINOv2SimilaritySelector:
                 if frame_index % frame_step == 0:
                     frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
                     feature = self._extract_feature(Image.fromarray(frame_rgb))
+                    score = _cosine_similarity(target_feature, feature)
                     candidate = FrameCandidate(
                         frame_index=frame_index,
                         timestamp_sec=frame_index / fps,
-                        score=0.0,
+                        score=score,
                     )
-                    candidate_features.append((candidate, feature))
-                    score = _cosine_similarity(target_feature, feature)
+                    candidates.append(candidate)
                     if best_candidate is None or score > best_candidate.score:
-                        best_candidate = FrameCandidate(
-                            frame_index=candidate.frame_index,
-                            timestamp_sec=candidate.timestamp_sec,
-                            score=score,
-                        )
+                        best_candidate = candidate
                         best_frame_rgb = frame_rgb.copy()
                 frame_index += 1
         finally:
             capture.release()
 
-        if not candidate_features:
+        if not candidates:
             raise ValueError(f"video contained no readable frames: {video_path}")
 
-        ranked = self._rank_features(target_feature, candidate_features)
+        ranked = sorted(candidates, key=lambda candidate: candidate.score, reverse=True)
         selected = ranked[0]
         if best_frame_rgb is None or best_candidate is None or best_candidate.frame_index != selected.frame_index:
             best_frame_rgb = self._read_frame(video_path, selected.frame_index)
@@ -110,10 +107,11 @@ class DINOv2SimilaritySelector:
             top_k=ranked[: self.top_k],
             diagnostics={
                 "algorithm": "dinov2_similarity",
+                "model": self.model_name,
                 "device": self.device,
                 "sample_fps": self.sample_fps,
                 "frame_step": frame_step,
-                "scored_frames": len(candidate_features),
+                "scored_frames": len(candidates),
             },
         )
 
