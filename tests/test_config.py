@@ -43,6 +43,30 @@ def test_load_config_resolves_paths_and_defaults(tmp_path: Path):
     assert config.frame_select.top_k == 3
 
 
+def test_load_config_resolves_relative_paths_from_config_directory(tmp_path: Path):
+    config_dir = tmp_path / "configs"
+    input_dir = config_dir / "input"
+    output_dir = config_dir / "output"
+    input_dir.mkdir(parents=True)
+    config_path = config_dir / "config.yaml"
+    write_yaml(
+        config_path,
+        {
+            "data": {
+                "input_dir": "input",
+                "output_dir": "output",
+            },
+            "pipeline": {"stages": ["frame_select"]},
+            "frame_select": {"algorithm": "fake_selector"},
+        },
+    )
+
+    config = load_config(config_path)
+
+    assert config.data.input_dir == input_dir.resolve()
+    assert config.data.output_dir == output_dir.resolve()
+
+
 def test_load_config_rejects_missing_input_dir(tmp_path: Path):
     config_path = tmp_path / "config.yaml"
     write_yaml(
@@ -78,4 +102,44 @@ def test_load_config_rejects_unknown_stage(tmp_path: Path):
     )
 
     with pytest.raises(ValueError, match="unknown pipeline stage"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_missing_frame_select_algorithm(tmp_path: Path):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        {
+            "data": {
+                "input_dir": str(input_dir),
+                "output_dir": str(tmp_path / "output"),
+            },
+            "pipeline": {"stages": ["frame_select"]},
+            "frame_select": {},
+        },
+    )
+
+    with pytest.raises(ValueError, match="frame_select.algorithm is required"):
+        load_config(config_path)
+
+
+def test_load_config_rejects_blank_frame_select_algorithm(tmp_path: Path):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        {
+            "data": {
+                "input_dir": str(input_dir),
+                "output_dir": str(tmp_path / "output"),
+            },
+            "pipeline": {"stages": ["frame_select"]},
+            "frame_select": {"algorithm": "   "},
+        },
+    )
+
+    with pytest.raises(ValueError, match="frame_select.algorithm is required"):
         load_config(config_path)

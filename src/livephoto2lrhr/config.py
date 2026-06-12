@@ -20,6 +20,13 @@ def _normalize_exts(exts: list[str] | tuple[str, ...]) -> tuple[str, ...]:
     return tuple(_normalize_ext(ext) for ext in exts)
 
 
+def _resolve_config_path(config_dir: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = config_dir / path
+    return path.resolve()
+
+
 @dataclass(frozen=True)
 class DataConfig:
     input_dir: Path
@@ -62,13 +69,13 @@ class AppConfig:
 
 
 def load_config(path: str | Path) -> AppConfig:
-    config_path = Path(path)
+    config_path = Path(path).resolve()
     with config_path.open("r", encoding="utf-8") as file:
         raw = yaml.safe_load(file) or {}
 
     data_raw = raw.get("data", {})
-    input_dir = Path(data_raw["input_dir"]).expanduser().resolve()
-    output_dir = Path(data_raw["output_dir"]).expanduser().resolve()
+    input_dir = _resolve_config_path(config_path.parent, data_raw["input_dir"])
+    output_dir = _resolve_config_path(config_path.parent, data_raw["output_dir"])
 
     if not input_dir.exists():
         raise ValueError(f"input_dir does not exist: {input_dir}")
@@ -79,7 +86,8 @@ def load_config(path: str | Path) -> AppConfig:
             raise ValueError(f"unknown pipeline stage: {stage}")
 
     frame_raw: dict[str, Any] = raw.get("frame_select", {})
-    if "frame_select" in stages and not frame_raw.get("algorithm"):
+    algorithm = str(frame_raw.get("algorithm", "")).strip()
+    if "frame_select" in stages and not algorithm:
         raise ValueError("frame_select.algorithm is required when frame_select stage is enabled")
 
     data_config = DataConfig(
@@ -92,7 +100,7 @@ def load_config(path: str | Path) -> AppConfig:
     )
     pipeline_config = PipelineConfig(stages=stages)
     frame_select_config = FrameSelectConfig(
-        algorithm=str(frame_raw.get("algorithm", "")),
+        algorithm=algorithm,
         device=str(frame_raw.get("device", "auto")),
         sample_fps=float(frame_raw.get("sample_fps", 15.0)),
         top_k=int(frame_raw.get("top_k", 5)),
