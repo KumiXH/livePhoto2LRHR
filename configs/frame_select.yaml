@@ -20,7 +20,7 @@ frame_select:
   sample_fps: 15
   top_k: 5
   batch_size: 16
-  resize_short_side: 512
+  resize_short_side: 518
   score_fusion:
     feature_weight: 0.7
     edge_weight: 0.3

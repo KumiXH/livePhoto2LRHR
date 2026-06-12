@@ -31,6 +31,7 @@ def _build_transform(resize_short_side: int) -> Any:
     return transforms.Compose(
         [
             transforms.Resize(resize_short_side, antialias=True),
+            transforms.CenterCrop(resize_short_side),
             transforms.ToTensor(),
             transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ]
@@ -124,6 +125,8 @@ class DINOv2SimilaritySelector:
             raise ValueError("top_k must be at least 1")
         if self.resize_short_side < 1:
             raise ValueError("resize_short_side must be at least 1")
+        if self.resize_short_side % 14 != 0:
+            raise ValueError("resize_short_side must be divisible by 14 for dinov2_vits14")
 
     def _extract_feature(self, image: Image.Image) -> Any:
         tensor = self.transform(image).unsqueeze(0).to(self.device)

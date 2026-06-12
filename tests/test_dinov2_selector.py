@@ -1,4 +1,6 @@
 import builtins
+import sys
+import types
 from pathlib import Path
 
 import cv2
@@ -8,7 +10,7 @@ from PIL import Image
 
 from livephoto2lrhr.algorithms.similarity import build_similarity_registry
 from livephoto2lrhr.algorithms.similarity.base import FrameCandidate
-from livephoto2lrhr.algorithms.similarity.dinov2 import DINOv2SimilaritySelector
+from livephoto2lrhr.algorithms.similarity.dinov2 import DINOv2SimilaritySelector, _build_transform
 from livephoto2lrhr.utils.device import resolve_device
 
 
@@ -86,6 +88,49 @@ def make_video(path: Path, frames_rgb: list[np.ndarray], fps: float = 30.0) -> N
     writer.release()
 
 
+def test_dinov2_transform_center_crops_to_square_patch_grid(monkeypatch):
+    calls = []
+
+    class FakeTransforms:
+        @staticmethod
+        def Compose(items):
+            calls.append(("Compose", tuple(items)))
+            return items
+
+        @staticmethod
+        def Resize(size, *, antialias):
+            calls.append(("Resize", size, antialias))
+            return "resize"
+
+        @staticmethod
+        def CenterCrop(size):
+            calls.append(("CenterCrop", size))
+            return "center_crop"
+
+        @staticmethod
+        def ToTensor():
+            calls.append(("ToTensor",))
+            return "to_tensor"
+
+        @staticmethod
+        def Normalize(*, mean, std):
+            calls.append(("Normalize", mean, std))
+            return "normalize"
+
+    fake_torchvision = types.SimpleNamespace(transforms=FakeTransforms)
+    monkeypatch.setitem(sys.modules, "torchvision", fake_torchvision)
+
+    transform = _build_transform(518)
+
+    assert transform == ["resize", "center_crop", "to_tensor", "normalize"]
+    assert calls[:4] == [
+        ("Resize", 518, True),
+        ("CenterCrop", 518),
+        ("ToTensor",),
+        ("Normalize", (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ]
+
+
 def test_dinov2_selector_reports_missing_torch(monkeypatch):
     real_import = builtins.__import__
 
@@ -103,7 +148,7 @@ def test_dinov2_selector_reports_missing_torch(monkeypatch):
 def test_dinov2_ranks_frames_by_feature_similarity(monkeypatch, tmp_path: Path):
     patch_fake_dinov2(monkeypatch)
 
-    selector = DINOv2SimilaritySelector({"device": "cpu", "top_k": 2, "resize_short_side": 32})
+    selector = DINOv2SimilaritySelector({"device": "cpu", "top_k": 2, "resize_short_side": 28})
     ranked = selector._rank_features(
         FakeTensor([0.0, 1.0, 0.0]),
         [
@@ -148,22 +193,22 @@ def test_dinov2_selector_selects_best_frame_from_video(monkeypatch, tmp_path: Pa
     patch_fake_dinov2(monkeypatch)
     image_path = tmp_path / "target.jpg"
     video_path = tmp_path / "target.mp4"
-    target = np.full((32, 32, 3), (20, 220, 20), dtype=np.uint8)
+    target = np.full((28, 28, 3), (20, 220, 20), dtype=np.uint8)
     Image.fromarray(target).save(image_path)
     frames = [
-        np.full((32, 32, 3), (220, 20, 20), dtype=np.uint8),
+        np.full((28, 28, 3), (220, 20, 20), dtype=np.uint8),
         target.copy(),
-        np.full((32, 32, 3), (20, 120, 160), dtype=np.uint8),
+        np.full((28, 28, 3), (20, 120, 160), dtype=np.uint8),
     ]
     make_video(video_path, frames)
 
-    selector = DINOv2SimilaritySelector({"device": "cpu", "sample_fps": 30, "top_k": 2, "resize_short_side": 32})
+    selector = DINOv2SimilaritySelector({"device": "cpu", "sample_fps": 30, "top_k": 2, "resize_short_side": 28})
     result = selector.select(image_path, video_path)
 
     assert result.selected.frame_index == 1
     assert [candidate.frame_index for candidate in result.top_k] == [1, 2]
     assert len(result.top_k) == 2
-    assert result.frame_rgb.shape == (32, 32, 3)
+    assert result.frame_rgb.shape == (28, 28, 3)
     assert result.diagnostics["algorithm"] == "dinov2_similarity"
     assert result.diagnostics["model"] == "dinov2_vits14"
     assert result.diagnostics["scored_frames"] == 3
@@ -175,6 +220,7 @@ def test_dinov2_selector_selects_best_frame_from_video(monkeypatch, tmp_path: Pa
         ({"sample_fps": 0}, "sample_fps must be greater than 0"),
         ({"top_k": 0}, "top_k must be at least 1"),
         ({"resize_short_side": 0}, "resize_short_side must be at least 1"),
+        ({"resize_short_side": 512}, "resize_short_side must be divisible by 14"),
     ],
 )
 def test_dinov2_selector_rejects_invalid_config_before_model_load(

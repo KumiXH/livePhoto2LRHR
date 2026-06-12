@@ -23,3 +23,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = run_pipeline(config)
     logging.info("Completed run: %s", summary["counts"])
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
