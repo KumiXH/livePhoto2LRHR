@@ -49,7 +49,7 @@ class FrameSelectConfig:
     sample_fps: float = 15.0
     top_k: int = 5
     batch_size: int = 16
-    resize_short_side: int = 512
+    resize_short_side: int = 518
     score_fusion: dict[str, float] | None = None
 
 
@@ -105,7 +105,7 @@ def load_config(path: str | Path) -> AppConfig:
         sample_fps=float(frame_raw.get("sample_fps", 15.0)),
         top_k=int(frame_raw.get("top_k", 5)),
         batch_size=int(frame_raw.get("batch_size", 16)),
-        resize_short_side=int(frame_raw.get("resize_short_side", 512)),
+        resize_short_side=int(frame_raw.get("resize_short_side", 518)),
         score_fusion=frame_raw.get("score_fusion"),
     )
     output_raw = raw.get("output", {})

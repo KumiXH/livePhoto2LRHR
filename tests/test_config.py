@@ -41,6 +41,7 @@ def test_load_config_resolves_paths_and_defaults(tmp_path: Path):
     assert config.pipeline.stages == ("frame_select",)
     assert config.frame_select.algorithm == "fake_selector"
     assert config.frame_select.top_k == 3
+    assert config.frame_select.resize_short_side == 518
 
 
 def test_load_config_resolves_relative_paths_from_config_directory(tmp_path: Path):

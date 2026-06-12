@@ -64,5 +64,5 @@ def test_cli_module_entrypoint_runs_pipeline(tmp_path: Path, tiny_pair: tuple[Pa
         text=True,
     )
 
-    assert completed.returncode == 0
+    assert completed.returncode == 0, completed.stderr or completed.stdout
     assert (output_dir / "LR" / "flower.png").exists()
