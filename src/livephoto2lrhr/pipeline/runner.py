@@ -150,6 +150,7 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
             "rows": report_result.rows,
             "csv": str(report_result.csv_path),
             "preview": str(report_result.preview_path) if report_result.preview_path is not None else "",
+            "html": str(report_result.html_path) if report_result.html_path is not None else "",
         }
 
     export_summary: dict[str, Any] | None = None

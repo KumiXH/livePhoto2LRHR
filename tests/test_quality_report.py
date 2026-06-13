@@ -73,8 +73,10 @@ def test_generate_quality_report_writes_csv_and_contact_sheet(tmp_path: Path):
     assert result.rows == 1
     assert result.csv_path == output_dir / "reports" / "quality_report.csv"
     assert result.preview_path == output_dir / "reports" / "preview_contact_sheet.jpg"
+    assert result.html_path == output_dir / "reports" / "preview_compare.html"
     assert result.csv_path.exists()
     assert result.preview_path.exists()
+    assert result.html_path.exists()
     with result.csv_path.open("r", encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
     assert rows[0]["sample_id"] == "sample"
@@ -90,6 +92,14 @@ def test_generate_quality_report_writes_csv_and_contact_sheet(tmp_path: Path):
     preview = Image.open(result.preview_path)
     assert preview.size[0] > 32
     assert preview.size[1] > 32
+    html = result.html_path.read_text(encoding="utf-8")
+    assert "sample" in html
+    assert "LR" in html
+    assert "Aligned LR" in html
+    assert "Color Matched LR" in html
+    assert "HR" in html
+    assert "aligned_to_hr_mae" in html
+    assert (output_dir / "LR" / "sample.png").as_posix() in html
 
 
 def test_generate_quality_report_handles_missing_optional_outputs(tmp_path: Path):
