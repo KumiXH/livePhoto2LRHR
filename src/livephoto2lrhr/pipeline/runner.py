@@ -9,6 +9,7 @@ from livephoto2lrhr.algorithms.similarity import build_similarity_registry
 from livephoto2lrhr.config import AppConfig
 from livephoto2lrhr.data.io import write_yaml
 from livephoto2lrhr.data.pairing import discover_pairs
+from livephoto2lrhr.reports.quality import QualityReportConfig, generate_quality_report
 from livephoto2lrhr.stages.align import AlignStage
 from livephoto2lrhr.stages.color_match import ColorMatchStage
 from livephoto2lrhr.stages.frame_select import FrameSelectStage
@@ -132,6 +133,22 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
                 counts[result.status] += 1
                 samples.append({"sample_id": result.sample_id, "status": result.status, "message": result.message})
 
+    report_summary: dict[str, Any] | None = None
+    if config.report.enabled:
+        report_result = generate_quality_report(
+            output_dir=config.data.output_dir,
+            config=QualityReportConfig(
+                output_folder=config.report.output_folder,
+                max_preview_samples=config.report.max_preview_samples,
+                thumbnail_size=config.report.thumbnail_size,
+            ),
+        )
+        report_summary = {
+            "rows": report_result.rows,
+            "csv": str(report_result.csv_path),
+            "preview": str(report_result.preview_path) if report_result.preview_path is not None else "",
+        }
+
     summary: dict[str, Any] = {
         "counts": dict(counts),
         "pair_discovery": {
@@ -143,6 +160,8 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         "samples": samples,
         "config": config.raw,
     }
+    if report_summary is not None:
+        summary["report"] = report_summary
     write_yaml(config.data.output_dir / "run_summary.yaml", summary)
     return summary
 

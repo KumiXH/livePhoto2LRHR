@@ -60,6 +60,12 @@ color_match:
     color_space: lab
     eps: 1.0e-6
 
+report:
+  enabled: false
+  output_folder: reports
+  max_preview_samples: 24
+  thumbnail_size: 160
+
 output:
   save_metadata: true
   overwrite: false

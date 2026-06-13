@@ -10,6 +10,7 @@ from livephoto2lrhr.config import (
     FrameSelectConfig,
     OutputConfig,
     PipelineConfig,
+    ReportConfig,
 )
 from livephoto2lrhr.pipeline.runner import run_pipeline
 
@@ -173,3 +174,22 @@ def test_run_pipeline_runs_color_match_after_frame_select(tmp_path: Path, tiny_p
     assert matched_path.exists()
     assert metadata["status"]["color_matched"] is True
     assert metadata["color_match"]["algorithm"] == "identity_color_match"
+
+
+def test_run_pipeline_generates_quality_report_when_enabled(tmp_path: Path, tiny_pair: tuple[Path, Path]):
+    image_path, _ = tiny_pair
+    output_dir = tmp_path / "output"
+    config = AppConfig(
+        data=DataConfig(input_dir=image_path.parent, output_dir=output_dir, image_exts=(".jpg",), video_exts=(".mp4",)),
+        pipeline=PipelineConfig(stages=("frame_select",)),
+        frame_select=FrameSelectConfig(algorithm="fake_selector", top_k=1),
+        output=OutputConfig(save_metadata=True, overwrite=False),
+        raw={"test": True},
+        report=ReportConfig(enabled=True, max_preview_samples=1, thumbnail_size=32),
+    )
+
+    summary = run_pipeline(config)
+
+    assert summary["report"]["rows"] == 1
+    assert (output_dir / "reports" / "quality_report.csv").exists()
+    assert (output_dir / "reports" / "preview_contact_sheet.jpg").exists()

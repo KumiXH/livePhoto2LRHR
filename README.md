@@ -89,6 +89,10 @@ Available baseline color matchers:
 
 Future LUT, Retinex, neural color-transfer, or fusion-controller matchers can plug into the same registry and metadata contract.
 
+## Quality Report
+
+Enable `report.enabled: true` to write `reports/quality_report.csv` and `reports/preview_contact_sheet.jpg`. The CSV records per-sample stage status, confidence, diagnostics, file existence, and simple LR-to-HR MAE metrics. The contact sheet samples LR, aligned LR, color-matched LR, and HR side by side for quick visual checks.
+
 ## Configuration
 
 The main knobs are:
@@ -106,6 +110,7 @@ The main knobs are:
 - `color_match.enabled`: whether phase 3 color matching runs.
 - `color_match.algorithm`: color strategy name, for example `identity_color_match` or `mean_std_lab`.
 - `color_match.input_folder`: `auto` prefers `LR_aligned` and falls back to `LR`; set a folder name to force a specific input.
+- `report.enabled`: whether to generate CSV and contact-sheet quality reports after the configured stages finish.
 - `output.overwrite`: whether to replace existing `LR`, `HR`, and metadata outputs.
 
 ## Output Contract

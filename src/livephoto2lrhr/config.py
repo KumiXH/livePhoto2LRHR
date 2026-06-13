@@ -154,6 +154,14 @@ class ColorMatchConfig:
 
 
 @dataclass(frozen=True)
+class ReportConfig:
+    enabled: bool = False
+    output_folder: str = "reports"
+    max_preview_samples: int = 24
+    thumbnail_size: int = 160
+
+
+@dataclass(frozen=True)
 class OutputConfig:
     save_metadata: bool = True
     overwrite: bool = False
@@ -168,6 +176,7 @@ class AppConfig:
     raw: dict[str, Any]
     align: AlignConfig = field(default_factory=AlignConfig)
     color_match: ColorMatchConfig = field(default_factory=ColorMatchConfig)
+    report: ReportConfig = field(default_factory=ReportConfig)
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -267,6 +276,13 @@ def load_config(path: str | Path) -> AppConfig:
             eps=float(mean_std_raw.get("eps", 1.0e-6)),
         ),
     )
+    report_raw: dict[str, Any] = raw.get("report", {})
+    report_config = ReportConfig(
+        enabled=bool(report_raw.get("enabled", False)),
+        output_folder=_validate_output_folder(str(report_raw.get("output_folder", "reports")), config_key="report.output_folder"),
+        max_preview_samples=int(report_raw.get("max_preview_samples", 24)),
+        thumbnail_size=int(report_raw.get("thumbnail_size", 160)),
+    )
     output_raw = raw.get("output", {})
     output_config = OutputConfig(
         save_metadata=bool(output_raw.get("save_metadata", True)),
@@ -279,6 +295,7 @@ def load_config(path: str | Path) -> AppConfig:
         frame_select=frame_select_config,
         align=align_config,
         color_match=color_match_config,
+        report=report_config,
         output=output_config,
         raw=raw,
     )
