@@ -33,7 +33,15 @@ def write_report_sample(output_dir: Path, sample: str = "sample") -> Path:
                 "algorithm": "identity_alignment",
                 "status": "success",
                 "confidence": 1.0,
-                "diagnostics": {"pre_alignment_error": 5.0, "post_alignment_error": 1.0},
+                "diagnostics": {
+                    "pre_alignment_error": 5.0,
+                    "post_alignment_error": 1.0,
+                    "flow_used": True,
+                    "flow_status": "accepted",
+                    "pre_flow_error": 0.5,
+                    "post_flow_error": 0.1,
+                    "mean_flow_magnitude": 2.0,
+                },
             },
             "color_match": {
                 "algorithm": "mean_std_lab",
@@ -53,7 +61,13 @@ def test_generate_quality_report_writes_csv_and_contact_sheet(tmp_path: Path):
 
     result = generate_quality_report(
         output_dir=output_dir,
-        config=QualityReportConfig(output_folder="reports", max_preview_samples=1, thumbnail_size=32),
+        config=QualityReportConfig(
+            output_folder="reports",
+            aligned_folder="LR_aligned",
+            color_matched_folder="LR_color_matched",
+            max_preview_samples=1,
+            thumbnail_size=32,
+        ),
     )
 
     assert result.rows == 1
@@ -67,6 +81,9 @@ def test_generate_quality_report_writes_csv_and_contact_sheet(tmp_path: Path):
     assert rows[0]["frame_select_score"] == "0.9"
     assert rows[0]["align_status"] == "success"
     assert rows[0]["align_post_error"] == "1.0"
+    assert rows[0]["flow_used"] == "True"
+    assert rows[0]["flow_status"] == "accepted"
+    assert rows[0]["post_flow_error"] == "0.1"
     assert rows[0]["color_match_status"] == "success"
     assert rows[0]["color_match_post_error"] == "2.0"
     assert float(rows[0]["lr_to_hr_mae"]) > float(rows[0]["color_matched_to_hr_mae"])
@@ -92,3 +109,20 @@ def test_generate_quality_report_handles_missing_optional_outputs(tmp_path: Path
     assert rows[0]["aligned_exists"] == "false"
     assert rows[0]["color_matched_exists"] == "false"
     assert rows[0]["aligned_to_hr_mae"] == ""
+
+
+def test_generate_quality_report_uses_configured_stage_folders(tmp_path: Path):
+    output_dir = tmp_path / "output"
+    write_report_sample(output_dir)
+    flow_path = output_image_path(output_dir, "LR_aligned_flow", Path("sample"), ".png")
+    save_rgb_array(np.full((4, 4, 3), 60, dtype=np.uint8), flow_path)
+
+    result = generate_quality_report(
+        output_dir=output_dir,
+        config=QualityReportConfig(output_folder="reports", aligned_folder="LR_aligned_flow", max_preview_samples=0),
+    )
+
+    with result.csv_path.open("r", encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+    assert rows[0]["aligned_exists"] == "true"
+    assert rows[0]["aligned_path"] == str(flow_path)

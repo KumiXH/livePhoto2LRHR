@@ -157,6 +157,8 @@ class ColorMatchConfig:
 class ReportConfig:
     enabled: bool = False
     output_folder: str = "reports"
+    aligned_folder: str = "LR_aligned"
+    color_matched_folder: str = "LR_color_matched"
     max_preview_samples: int = 24
     thumbnail_size: int = 160
 
@@ -280,6 +282,14 @@ def load_config(path: str | Path) -> AppConfig:
     report_config = ReportConfig(
         enabled=bool(report_raw.get("enabled", False)),
         output_folder=_validate_output_folder(str(report_raw.get("output_folder", "reports")), config_key="report.output_folder"),
+        aligned_folder=_validate_input_folder(
+            str(report_raw.get("aligned_folder", "LR_aligned")),
+            config_key="report.aligned_folder",
+        ),
+        color_matched_folder=_validate_input_folder(
+            str(report_raw.get("color_matched_folder", "LR_color_matched")),
+            config_key="report.color_matched_folder",
+        ),
         max_preview_samples=int(report_raw.get("max_preview_samples", 24)),
         thumbnail_size=int(report_raw.get("thumbnail_size", 160)),
     )

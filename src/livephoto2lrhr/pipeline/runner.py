@@ -139,6 +139,8 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
             output_dir=config.data.output_dir,
             config=QualityReportConfig(
                 output_folder=config.report.output_folder,
+                aligned_folder=config.report.aligned_folder,
+                color_matched_folder=config.report.color_matched_folder,
                 max_preview_samples=config.report.max_preview_samples,
                 thumbnail_size=config.report.thumbnail_size,
             ),

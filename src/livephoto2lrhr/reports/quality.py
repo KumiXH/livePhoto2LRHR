@@ -15,6 +15,8 @@ from livephoto2lrhr.data.io import output_image_path, read_rgb_array
 @dataclass(frozen=True)
 class QualityReportConfig:
     output_folder: str = "reports"
+    aligned_folder: str = "LR_aligned"
+    color_matched_folder: str = "LR_color_matched"
     max_preview_samples: int = 24
     thumbnail_size: int = 160
 
@@ -37,6 +39,11 @@ CSV_FIELDS = [
     "align_confidence",
     "align_pre_error",
     "align_post_error",
+    "flow_used",
+    "flow_status",
+    "pre_flow_error",
+    "post_flow_error",
+    "mean_flow_magnitude",
     "color_match_algorithm",
     "color_match_status",
     "color_match_confidence",
@@ -59,7 +66,10 @@ CSV_FIELDS = [
 def generate_quality_report(output_dir: Path, config: QualityReportConfig) -> QualityReportResult:
     report_dir = output_dir / config.output_folder
     report_dir.mkdir(parents=True, exist_ok=True)
-    rows = [_row_from_metadata(output_dir, path) for path in sorted((output_dir / "metadata").rglob("*.yaml"))]
+    rows = [
+        _row_from_metadata(output_dir, path, config=config)
+        for path in sorted((output_dir / "metadata").rglob("*.yaml"))
+    ]
     csv_path = report_dir / "quality_report.csv"
     _write_csv(csv_path, rows)
     preview_path = None
@@ -69,12 +79,12 @@ def generate_quality_report(output_dir: Path, config: QualityReportConfig) -> Qu
     return QualityReportResult(rows=len(rows), csv_path=csv_path, preview_path=preview_path)
 
 
-def _row_from_metadata(output_dir: Path, meta_path: Path) -> dict[str, str]:
+def _row_from_metadata(output_dir: Path, meta_path: Path, *, config: QualityReportConfig) -> dict[str, str]:
     metadata = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
     relative_stem = meta_path.relative_to(output_dir / "metadata").with_suffix("")
     lr_path = output_image_path(output_dir, "LR", relative_stem, ".png")
-    aligned_path = output_image_path(output_dir, "LR_aligned", relative_stem, ".png")
-    matched_path = output_image_path(output_dir, "LR_color_matched", relative_stem, ".png")
+    aligned_path = output_image_path(output_dir, config.aligned_folder, relative_stem, ".png")
+    matched_path = output_image_path(output_dir, config.color_matched_folder, relative_stem, ".png")
     hr_path = output_image_path(output_dir, "HR", relative_stem, ".png")
     selected = _nested(metadata, "frame_select", "selected") or {}
     align = metadata.get("align") or {}
@@ -92,6 +102,11 @@ def _row_from_metadata(output_dir: Path, meta_path: Path) -> dict[str, str]:
         "align_confidence": _as_str(align.get("confidence")),
         "align_pre_error": _as_str(align_diag.get("pre_alignment_error")),
         "align_post_error": _as_str(align_diag.get("post_alignment_error")),
+        "flow_used": _as_str(align_diag.get("flow_used")),
+        "flow_status": _as_str(align_diag.get("flow_status")),
+        "pre_flow_error": _as_str(align_diag.get("pre_flow_error")),
+        "post_flow_error": _as_str(align_diag.get("post_flow_error")),
+        "mean_flow_magnitude": _as_str(align_diag.get("mean_flow_magnitude")),
         "color_match_algorithm": _as_str(color_match.get("algorithm")),
         "color_match_status": _as_str(color_match.get("status")),
         "color_match_confidence": _as_str(color_match.get("confidence")),

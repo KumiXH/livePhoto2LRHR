@@ -62,7 +62,7 @@ Available baseline aligners:
 - `identity_alignment`: copies LR into `LR_aligned` and validates the stage/output contract.
 - `phase_correlation_translation`: estimates global translation with OpenCV phase correlation.
 - `ecc_alignment`: estimates OpenCV ECC translation/euclidean/affine/homography transforms.
-- `coarse_to_flow`: runs a configurable coarse aligner now and reserves the local optical-flow refinement slot.
+- `coarse_to_flow`: runs a configurable coarse aligner, then optionally applies OpenCV DIS/Farneback dense-flow refinement when it improves measured error.
 
 Future SAM, RAFT, LoFTR, LightGlue, or fusion-network aligners can plug into the same alignment registry and metadata contract.
 
