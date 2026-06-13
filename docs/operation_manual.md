@@ -1,89 +1,89 @@
-# livePhoto2LRHR Operation Manual
+# livePhoto2LRHR 使用手册
 
-This manual describes the recommended production workflow for building LR/HR super-resolution training pairs from Live Photo-style image/video pairs.
+本文档面向实际落地使用，说明如何用 `livePhoto2LRHR` 从 Live Photo 风格的图片/视频对中，构建超分训练所需的 `LR/HR` 数据集。
 
-The project is intentionally organized as a configurable Python pipeline:
+工程整体是一个可配置的 Python pipeline：
 
 ```text
 image + mp4
-  -> phase 1 frame selection
-  -> phase 2 alignment
-  -> optional phase 3 color matching
-  -> quality report
-  -> final dataset export
+  -> phase 1: frame selection（抽帧匹配）
+  -> phase 2: alignment（对齐）
+  -> optional phase 3: color matching（可选调色）
+  -> quality report（质量报告）
+  -> final dataset export（最终数据集导出）
 ```
 
-Original `LR` and `HR` outputs are never overwritten by later stages. Each later stage writes its own folder, so failed experiments can be discarded safely.
+后续阶段不会覆盖原始 `LR` / `HR`，每个阶段都写入自己的目录，因此可以安全试验不同算法和参数。
 
-## 1. Stage Summary
+## 1. 阶段总览
 
-| Stage | Goal | Current models / methods | Recommended default | Current recommendation |
+| 阶段 | 目标 | 当前方法 / models | 推荐默认值 | 当前建议 |
 | --- | --- | --- | --- | --- |
-| Phase 1: Frame Selection | Pick the MP4 frame that best matches the still image | `dinov2_similarity`, `opencv_similarity` | `dinov2_similarity` | Use DINOv2 for real dataset generation. Use OpenCV only for CPU-only smoke tests or quick validation. |
-| Phase 2: Alignment | Align LR geometry to HR geometry | `identity_alignment`, `phase_correlation_translation`, `ecc_alignment`, `coarse_to_flow` | `coarse_to_flow` with `phase_correlation_translation` + DIS flow | This is the current strongest baseline. Keep `identity_alignment` as a safe fallback and debugging baseline. |
-| Phase 3: Color Matching | Reduce brightness/color gap between LR and HR | `identity_color_match`, `mean_std_lab` | `mean_std_lab` for experiments | Keep color matching optional for now. Do not assume it should be the final exported LR source until stronger quality gates are in place. |
+| Phase 1: Frame Selection | 从 MP4 中找出与静态图最接近的一帧 | `dinov2_similarity`, `opencv_similarity` | `dinov2_similarity` | 真正生成数据集时建议优先用 DINOv2。OpenCV 更适合 CPU smoke 或快速验证。 |
+| Phase 2: Alignment | 让 LR 在几何上尽量对齐 HR | `identity_alignment`, `phase_correlation_translation`, `ecc_alignment`, `coarse_to_flow` | `coarse_to_flow` + `phase_correlation_translation` + DIS flow | 这是当前最强 baseline。`identity_alignment` 适合作为 fallback 和调试基线。 |
+| Phase 3: Color Matching | 缩小 LR 与 HR 的亮度 / 颜色差距 | `identity_color_match`, `mean_std_lab` | `mean_std_lab` 仅供实验 | 目前建议保持可选，不要默认认为调色后的 LR 一定更适合作为最终训练输入。 |
 
-### 1.1 Phase 1 Details
+### 1.1 Phase 1：抽帧匹配
 
 - `dinov2_similarity`
-  Uses DINOv2 feature similarity as the main matching signal and is the preferred production baseline.
+  以 DINOv2 特征相似度为主信号，是当前推荐的生产基线。
 - `opencv_similarity`
-  Uses a lighter OpenCV-based similarity baseline and is mainly useful for fast CPU smoke runs.
+  轻量级 OpenCV baseline，更适合快速 CPU 验证。
 
-### 1.2 Phase 2 Details
+### 1.2 Phase 2：对齐
 
 - `identity_alignment`
-  No geometric change; useful for stage validation, fallback, and debugging.
+  不做几何变换，主要用于阶段验证、fallback 和调试。
 - `phase_correlation_translation`
-  Estimates a global x/y translation.
+  估计全局平移量（x/y translation）。
 - `ecc_alignment`
-  Uses OpenCV ECC optimization for translation/euclidean/affine/homography-style registration.
+  用 OpenCV ECC 做 `translation / euclidean / affine / homography` 风格配准。
 - `coarse_to_flow`
-  Runs a coarse aligner first, then applies dense flow refinement only when measured error improves.
+  先做 coarse align，再在“误差真的变小”的前提下接受 dense flow refinement。
 
-### 1.3 Phase 3 Details
+### 1.3 Phase 3：调色
 
 - `identity_color_match`
-  No color change; useful as a no-op baseline.
+  不做颜色变化，仅用于基线对照。
 - `mean_std_lab`
-  Matches mean/std statistics in LAB color space. It can improve some samples and worsen others, so it should still be treated as an experiment-oriented baseline.
+  在 `LAB` 色彩空间下匹配均值/方差。对部分样本有帮助，对部分样本也可能变差，所以目前仍然视为实验性 baseline。
 
-### 1.4 Advanced Direction
+### 1.4 后续增强方向
 
-- Higher-quality export gates
-  Add `SSIM`, `PSNR`, crop/border artifact checks, dimension checks, and flow outlier checks.
-- Stronger alignment backends
-  Add `LoFTR`, `LightGlue`, `RAFT`, `GMFlow`, `SAM`-style masks, or fusion-style controllers.
-- Stronger color backends
-  Add histogram matching, masked color transfer, LUT fitting, Retinex-style correction, or lightweight neural color models.
+- 更强的质量门槛（quality gates）
+  例如 `SSIM`、`PSNR`、边缘 / 裁剪伪影检测、尺寸检查、flow 异常值检测。
+- 更强的对齐后端（alignment backends）
+  例如 `LoFTR`、`LightGlue`、`RAFT`、`GMFlow`、`SAM` 风格 mask、fusion controller。
+- 更强的调色后端（color backends）
+  例如 histogram matching、masked color transfer、LUT fitting、Retinex、轻量神经网络调色。
 
-## 2. Environment
+## 2. 环境准备
 
-Use Python 3.10 or newer.
+建议使用 Python 3.10 及以上。
 
-CPU/OpenCV baseline:
+### 2.1 CPU / OpenCV baseline
 
 ```bash
 python -m pip install -e .[dev]
 ```
 
-DINOv2 frame selector:
+### 2.2 DINOv2 抽帧匹配
 
 ```bash
 python -m pip install -e .[dev,dinov2]
 ```
 
-Run tests:
+### 2.3 运行测试
 
 ```bash
 python -m pytest -q
 ```
 
-On Linux, create the environment in the repo root and run the same commands. If you use CUDA, install a PyTorch build matching your CUDA driver before installing this project.
+在 Linux 上也使用同样的命令即可。如果你要使用 CUDA，请先安装与你 CUDA 驱动匹配的 PyTorch，再安装本项目。
 
-## 3. Input Layout
+## 3. 输入目录组织
 
-Put still images and videos in one input directory. A pair is matched by the same relative stem:
+把图片和视频放在同一个输入目录下，通过“相同相对 stem 名”进行匹配，例如：
 
 ```text
 input/
@@ -94,7 +94,7 @@ input/
     IMG_0002.mp4
 ```
 
-The pipeline will write mirrored output folders:
+工程会生成镜像结构输出：
 
 ```text
 output/
@@ -104,17 +104,18 @@ output/
   run_summary.yaml
 ```
 
-Nested input folders are preserved. For example `input/trip_a/IMG_0001.jpg` becomes `output/HR/trip_a/IMG_0001.png`.
+如果输入是 `input/trip_a/IMG_0001.jpg`，那么 HR 输出会是 `output/HR/trip_a/IMG_0001.png`。  
+同理，LR 也会保持一致的目录层级。
 
-## 4. Configuration
+## 4. 配置文件
 
-Start from:
+推荐从这个模板开始：
 
 ```text
 configs/full_pipeline_template.yaml
 ```
 
-Copy it to a local file that is not shared across machines, then edit:
+把它复制成你自己的配置，然后修改：
 
 ```yaml
 data:
@@ -122,38 +123,42 @@ data:
   output_dir: /path/to/output
 ```
 
-Windows paths can use forward slashes:
+### 4.1 Windows 路径写法
+
+建议用正斜杠：
 
 ```yaml
 input_dir: D:/datasets/livephoto/input
 output_dir: D:/datasets/livephoto/output
 ```
 
-Linux paths are normal absolute paths:
+### 4.2 Linux 路径写法
+
+Linux 直接使用正常绝对路径：
 
 ```yaml
 input_dir: /data/livephoto/input
 output_dir: /data/livephoto/output
 ```
 
-Avoid committing machine-specific paths unless the config is explicitly a smoke-test file.
+除非是专门的 smoke-test 配置，否则尽量不要把机器私有路径提交到仓库里。
 
-## 5. Recommended First Run
+## 5. 推荐首次运行方式
 
-For a new dataset, run the full baseline pipeline:
+对于一个新数据集，建议先直接跑完整 baseline pipeline：
 
 ```bash
 livephoto2lrhr --config configs/full_pipeline_template.yaml
 ```
 
-If the package is not installed as editable yet, use:
+如果当前环境还没有 editable install，可以先执行：
 
 ```bash
 python -m pip install -e .[dev,dinov2]
 livephoto2lrhr --config configs/full_pipeline_template.yaml
 ```
 
-This runs:
+默认推荐运行：
 
 ```yaml
 pipeline:
@@ -162,13 +167,13 @@ pipeline:
     - align
 ```
 
-It also generates a report and exports accepted samples when `report.enabled: true` and `export.enabled: true`.
+如果配置里同时开启了 `report.enabled: true` 和 `export.enabled: true`，则还会自动生成报告并导出最终训练数据集。
 
-## 6. Phase 1: Frame Selection
+## 6. Phase 1：抽帧匹配
 
-Phase 1 reads each MP4 and chooses one LR frame that best matches the still image.
+Phase 1 会从每个 MP4 中选出最接近对应静态图的一帧作为 LR。
 
-Recommended default:
+推荐默认配置：
 
 ```yaml
 frame_select:
@@ -180,7 +185,7 @@ frame_select:
   resize_short_side: 518
 ```
 
-Outputs:
+输出：
 
 ```text
 output/
@@ -189,22 +194,25 @@ output/
   metadata/
 ```
 
-`LR` contains only the selected best frame. Top-k candidates are metadata only; they are not written into the LR folder.
+其中：
 
-CPU-only smoke option:
+- `LR/` 中只保存最终选中的最佳帧
+- `top_k` 只记录在 metadata 中，不会写进 `LR/`
+
+如果只是想做 CPU 快速 smoke，可以用：
 
 ```yaml
 frame_select:
   algorithm: opencv_similarity
 ```
 
-Use this only for fast validation. For real dataset generation, prefer `dinov2_similarity`.
+但如果是真实数据集生产，建议优先使用 `dinov2_similarity`。
 
-## 7. Phase 2: Alignment
+## 7. Phase 2：对齐
 
-Phase 2 aligns selected LR to HR geometry.
+Phase 2 用来让 LR 在几何上更接近 HR。
 
-Recommended baseline:
+推荐 baseline：
 
 ```yaml
 align:
@@ -220,7 +228,7 @@ align:
     algorithm: dis
 ```
 
-Outputs:
+输出：
 
 ```text
 output/
@@ -229,9 +237,9 @@ output/
   metadata/
 ```
 
-The original `LR/` and `HR/` are not modified.
+原始 `LR/` 和 `HR/` 不会被修改。
 
-Available aligners:
+当前可用对齐算法：
 
 ```text
 identity_alignment
@@ -240,11 +248,16 @@ ecc_alignment
 coarse_to_flow
 ```
 
-`coarse_to_flow` first runs a coarse aligner, then accepts dense flow only when it improves measured error. If the flow result is worse, the coarse result is kept.
+`coarse_to_flow` 的行为是：
 
-## 8. Phase 3: Color Matching
+1. 先运行 coarse aligner
+2. 再尝试 dense flow refinement
+3. 只有在实测误差变小时，才接受 flow 结果
+4. 如果 flow 后更差，则保留 coarse 结果
 
-Phase 3 is optional. It is useful for experiments but is not recommended as the default final LR source yet.
+## 8. Phase 3：调色
+
+Phase 3 是可选项。它更适合实验，不建议默认直接拿它作为最终训练输入。
 
 ```yaml
 color_match:
@@ -254,25 +267,30 @@ color_match:
   output_folder: LR_color_matched
 ```
 
-`input_folder: auto` prefers `LR_aligned` and falls back to `LR`. If your alignment output is `LR_aligned_flow`, set:
+`input_folder: auto` 的规则：
+
+- 优先读 `LR_aligned`
+- 如果没有，则回退到 `LR`
+
+如果你的对齐输出目录是 `LR_aligned_flow`，建议显式写：
 
 ```yaml
 color_match:
   input_folder: LR_aligned_flow
 ```
 
-Current color matchers:
+当前可用调色器：
 
 ```text
 identity_color_match
 mean_std_lab
 ```
 
-The baseline `mean_std_lab` can improve brightness/color in some samples and worsen others. Keep it as an experiment until quality gates are stronger.
+`mean_std_lab` 在一些样本上会改善亮度/颜色，但在另一些样本上也可能变差，因此建议继续把它当作实验基线使用。
 
-## 9. Quality Report
+## 9. 质量报告
 
-Enable:
+开启：
 
 ```yaml
 report:
@@ -282,7 +300,7 @@ report:
   color_matched_folder: LR_color_matched
 ```
 
-Outputs:
+输出：
 
 ```text
 output/reports_flow/
@@ -290,7 +308,7 @@ output/reports_flow/
   preview_contact_sheet.jpg
 ```
 
-Important CSV columns:
+关键 CSV 字段包括：
 
 ```text
 sample_id
@@ -309,11 +327,11 @@ color_matched_path
 hr_path
 ```
 
-The report is intentionally plain CSV so you can build your own viewer, dashboard, or manual review tool around it.
+报告故意保持为普通 CSV，方便你自己接 viewer、dashboard 或人工审核工具。
 
-## 10. Final Dataset Export
+## 10. 最终数据集导出
 
-Export reads a quality report and copies accepted samples into a final training dataset:
+最终导出（final export）会读取质量报告，并把通过门槛的样本复制到最终训练数据集中：
 
 ```yaml
 export:
@@ -327,7 +345,7 @@ export:
   max_source_to_hr_mae: 30.0
 ```
 
-Outputs:
+输出：
 
 ```text
 output/final_flow/
@@ -336,7 +354,7 @@ output/final_flow/
   manifest.csv
 ```
 
-`manifest.csv` records every accepted and rejected sample with a reason:
+`manifest.csv` 会记录每个样本是 accepted 还是 rejected，以及拒绝原因，例如：
 
 ```text
 accepted
@@ -349,7 +367,7 @@ source_to_hr_mae_above_max
 destination_exists
 ```
 
-Recommended first export policy:
+推荐的首次导出策略：
 
 ```yaml
 lr_source: aligned
@@ -358,13 +376,13 @@ require_flow_status: accepted
 max_source_to_hr_mae: 30.0
 ```
 
-Tune `max_source_to_hr_mae` after inspecting your dataset distribution. A lower threshold is cleaner but rejects more samples.
+之后可以根据数据分布再逐步调 `max_source_to_hr_mae`。阈值越低，样本越干净，但通过数也会越少。
 
-## 11. Running Stages Separately
+## 11. 分阶段单独运行
 
-You can run stages in separate passes.
+你也可以把各阶段拆开单独跑。
 
-Phase 1 only:
+### 11.1 只跑 Phase 1
 
 ```yaml
 pipeline:
@@ -372,7 +390,9 @@ pipeline:
     - frame_select
 ```
 
-Alignment only, assuming phase 1 already exists:
+### 11.2 只跑对齐
+
+前提是 Phase 1 已经产出完成：
 
 ```yaml
 pipeline:
@@ -380,7 +400,9 @@ pipeline:
     - align
 ```
 
-Export only, assuming a report already exists:
+### 11.3 只跑最终导出
+
+前提是质量报告已经存在：
 
 ```yaml
 pipeline:
@@ -393,22 +415,23 @@ export:
   enabled: true
 ```
 
-This is useful when tuning export thresholds. You do not need to rerun DINOv2 or optical flow just to change final dataset filtering.
+这在调 export 阈值时非常有用，因为你不需要每次都重新跑 DINOv2 或 optical flow。
 
-## 12. Linux Notes
+## 12. Linux 使用说明
 
-Use forward-slash absolute paths in YAML.
+YAML 中建议统一使用正斜杠绝对路径。
 
-Install system libraries needed by OpenCV/Pillow if your Linux image is minimal:
+如果 Linux 环境比较精简，可能需要先补一些 OpenCV / Pillow 相关系统库：
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y libgl1 libglib2.0-0
 ```
 
-For headless servers, `opencv-python` is usually enough for this project because it does not open GUI windows. If your environment has GUI library conflicts, replace it with `opencv-python-headless` in your environment.
+对于 headless server，本项目通常直接用 `opencv-python` 就够了，因为不会弹 GUI 窗口。  
+如果你的环境和 GUI 库有冲突，可以在环境里改用 `opencv-python-headless`。
 
-For GPU DINOv2, verify PyTorch first:
+如果你要用 GPU 版 DINOv2，建议先检查 PyTorch：
 
 ```bash
 python - <<'PY'
@@ -418,63 +441,64 @@ print(torch.cuda.is_available())
 PY
 ```
 
-Then run with:
+然后在配置里使用：
 
 ```yaml
 frame_select:
   device: cuda
 ```
 
-## 13. Common Problems
+## 13. 常见问题
 
-No pairs found:
+### 13.1 没有发现任何配对
 
-```text
-Check that image and video share the same relative stem.
-Example: input/a/IMG_0001.jpg and input/a/IMG_0001.mp4
-```
-
-DINOv2 fails on first run:
+请确认图片和视频的相对 stem 名一致，例如：
 
 ```text
-The selector currently uses torch.hub. Make sure the machine has network access or a populated torch cache.
+input/a/IMG_0001.jpg
+input/a/IMG_0001.mp4
 ```
 
-Alignment output is missing:
+### 13.2 DINOv2 首次运行失败
+
+当前 selector 仍然依赖 `torch.hub`。  
+请确保机器有网络访问能力，或者本地已经存在可用缓存。
+
+### 13.3 对齐输出缺失
+
+请先确认 `output/LR` 和 `output/HR` 已存在，因为对齐阶段依赖 Phase 1 的输出。
+
+### 13.4 导出时拒绝样本过多
+
+建议先打开 `manifest.csv`，按 `reason` 分组，再针对性调整：
+
+- `max_source_to_hr_mae`
+- `min_align_confidence`
+- `require_flow_status`
+
+### 13.5 中文路径在终端里显示乱码
+
+优先使用 UTF-8 终端，并在 YAML 中使用正斜杠路径。  
+项目内部使用的是 Python `pathlib`，本身支持 Unicode 路径，但终端显示仍然可能因为编码配置出问题。
+
+## 14. 当前工程状态
+
+当前项目已经具备一个可用 baseline：
 
 ```text
-Check output/LR and output/HR exist first. Alignment consumes phase 1 outputs.
+Phase 1: DINOv2 / OpenCV 抽帧匹配
+Phase 2: identity / phase correlation / ECC / coarse-to-flow 对齐
+Phase 3: identity / mean-std LAB 调色
+Report: CSV + contact sheet
+Export: 质量门槛驱动的最终 LR/HR 导出
 ```
 
-Export rejects too many samples:
+整个 baseline 的核心目标是“可替换、可配置、可逐步增强”。  
+算法都通过 registry 管理，pipeline 行为由 YAML 驱动。
 
-```text
-Open manifest.csv and group by reason. Then tune max_source_to_hr_mae, min_align_confidence, or require_flow_status.
-```
+## 15. 后续更强质量门槛
 
-Chinese or non-ASCII paths look corrupted in terminal:
-
-```text
-Prefer UTF-8 terminals and forward-slash YAML paths. The pipeline uses Python pathlib and supports Unicode paths, but terminal display can still be misconfigured.
-```
-
-## 14. Current Baseline Status
-
-The current project is a usable baseline:
-
-```text
-Phase 1: DINOv2/OpenCV frame selection
-Phase 2: identity, phase correlation, ECC, coarse-to-flow alignment
-Phase 3: identity and mean/std LAB color matching
-Report: CSV and contact sheet
-Export: quality-gated final LR/HR dataset
-```
-
-The baseline is designed to be replaceable. Algorithms live behind registries, and pipeline behavior is YAML-driven.
-
-## 15. Advanced Quality Gates
-
-The current export gate supports:
+当前 export gate 已支持：
 
 ```text
 align_status
@@ -485,55 +509,55 @@ file existence
 destination overwrite safety
 ```
 
-Recommended next quality metrics:
+下一步比较值得补的质量指标包括：
 
 ```text
 SSIM
 PSNR
 edge similarity
-crop/border artifact score
+crop / border artifact score
 dimension and aspect-ratio checks
 flow magnitude outlier checks
 local patch error percentiles
-face/foreground region weighted error
+face / foreground weighted error
 ```
 
-Suggested implementation shape:
+推荐扩展方式：
 
 ```text
 reports/quality.py
-  add metric columns
+  增加新的 metric 列
 
 export/dataset.py
-  add optional thresholds
+  增加对应可选阈值
 
 configs/*.yaml
-  expose thresholds
+  暴露阈值开关
 ```
 
-Keep all gates optional. Different photo sets will need different thresholds.
+建议保持所有门槛都是 optional，因为不同数据集适合的阈值并不一样。
 
-## 16. Advanced Alignment Roadmap
+## 16. 更强对齐 roadmap
 
-The current alignment baselines are useful but not final.
+当前对齐 baseline 是可用的，但不是终局。
 
-Recommended next aligners:
+推荐后续优先考虑的对齐增强方向：
 
 ```text
-LoFTR or LightGlue feature matching
-RAFT or GMFlow optical flow
-SAM-style foreground/object masks
+LoFTR / LightGlue feature matching
+RAFT / GMFlow optical flow
+SAM-style foreground / object masks
 homography + local flow hybrid
-fusion controller that chooses per sample
+fusion controller for per-sample routing
 ```
 
-The expected contract should remain:
+但无论换成什么高级模型，都建议继续保持同一 contract：
 
 ```text
 LR image + HR image + metadata + config -> AlignResult
 ```
 
-Each advanced aligner should return:
+每个高级 aligner 仍应返回：
 
 ```text
 aligned_lr_rgb
@@ -544,43 +568,43 @@ artifacts
 diagnostics
 ```
 
-Do not special-case advanced models in the runner. Add them to the alignment registry and configure them by YAML.
+不要在 runner 里为高级模型写特殊分支，直接通过 alignment registry 接入即可。
 
-## 17. Advanced Color Roadmap
+## 17. 更强调色 roadmap
 
-The current `mean_std_lab` matcher is a baseline only.
+当前 `mean_std_lab` 只是 baseline。
 
-Recommended next color methods:
+推荐后续增强方向：
 
 ```text
 histogram matching
-masked foreground/background color matching
+masked foreground / background color matching
 Retinex-style illumination correction
 3D LUT fitting
 small neural color transfer model
-exposure/white-balance regression
+exposure / white-balance regression
 ```
 
-Color matching should stay optional until quality gates prove it improves final training data.
+在更强质量门槛建立前，调色仍应保持 optional，不建议默认强制进入最终导出链路。
 
-## 18. Recommended Production Checklist
+## 18. 推荐生产检查清单
 
-Before treating a generated dataset as training-ready:
+在把一批生成结果认定为“可训练数据集”之前，建议至少完成：
 
 ```text
-Run full tests.
-Run frame selection on a small subset.
-Inspect metadata top-k candidates.
-Run alignment and report.
-Check report metric distributions.
-Export with conservative gates.
-Inspect manifest rejection reasons.
-Manually sample accepted and rejected pairs.
-Freeze the config used for the dataset.
-Record git commit and run_summary.yaml.
+运行全量测试
+先在小子集上跑抽帧
+检查 metadata 中 top-k 候选
+运行对齐并生成报告
+查看报告指标分布
+用保守阈值导出 final dataset
+检查 manifest 中的拒绝原因
+人工抽样 accepted / rejected
+冻结最终使用的 config
+记录 git commit 和 run_summary.yaml
 ```
 
-The most important reproducibility files are:
+最重要的可复现文件包括：
 
 ```text
 config YAML
