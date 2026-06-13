@@ -9,6 +9,7 @@ from livephoto2lrhr.algorithms.similarity import build_similarity_registry
 from livephoto2lrhr.config import AppConfig
 from livephoto2lrhr.data.io import write_yaml
 from livephoto2lrhr.data.pairing import discover_pairs
+from livephoto2lrhr.export.dataset import ExportDatasetConfig, export_dataset
 from livephoto2lrhr.reports.quality import QualityReportConfig, generate_quality_report
 from livephoto2lrhr.stages.align import AlignStage
 from livephoto2lrhr.stages.color_match import ColorMatchStage
@@ -151,6 +152,27 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
             "preview": str(report_result.preview_path) if report_result.preview_path is not None else "",
         }
 
+    export_summary: dict[str, Any] | None = None
+    if config.export.enabled:
+        export_result = export_dataset(
+            output_dir=config.data.output_dir,
+            config=ExportDatasetConfig(
+                input_report=config.export.input_report,
+                output_folder=config.export.output_folder,
+                lr_source=config.export.lr_source,
+                min_align_confidence=config.export.min_align_confidence,
+                require_align_status=config.export.require_align_status,
+                require_flow_status=config.export.require_flow_status,
+                max_source_to_hr_mae=config.export.max_source_to_hr_mae,
+                overwrite=config.output.overwrite,
+            ),
+        )
+        export_summary = {
+            "accepted": export_result.accepted,
+            "rejected": export_result.rejected,
+            "manifest": str(export_result.manifest_path),
+        }
+
     summary: dict[str, Any] = {
         "counts": dict(counts),
         "pair_discovery": {
@@ -164,6 +186,8 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
     }
     if report_summary is not None:
         summary["report"] = report_summary
+    if export_summary is not None:
+        summary["export"] = export_summary
     write_yaml(config.data.output_dir / "run_summary.yaml", summary)
     return summary
 

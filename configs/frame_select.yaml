@@ -66,6 +66,16 @@ report:
   max_preview_samples: 24
   thumbnail_size: 160
 
+export:
+  enabled: false
+  input_report: reports/quality_report.csv
+  output_folder: final
+  lr_source: aligned
+  min_align_confidence: 0.0
+  require_align_status: success
+  require_flow_status:
+  max_source_to_hr_mae:
+
 output:
   save_metadata: true
   overwrite: false

@@ -1,0 +1,34 @@
+task:
+  name: livephoto_export_final_smoke
+  seed: 42
+
+data:
+  input_dir: D:/SR数据集/花
+  output_dir: D:/SR数据集/花_pairs
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages: []
+
+frame_select:
+  algorithm: dinov2_similarity
+
+report:
+  enabled: false
+
+export:
+  enabled: true
+  input_report: reports_flow/quality_report.csv
+  output_folder: final_flow
+  lr_source: aligned
+  min_align_confidence: 0.3
+  require_align_status: success
+  require_flow_status: accepted
+  max_source_to_hr_mae: 30.0
+
+output:
+  save_metadata: true
+  overwrite: true

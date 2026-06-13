@@ -93,6 +93,35 @@ Future LUT, Retinex, neural color-transfer, or fusion-controller matchers can pl
 
 Enable `report.enabled: true` to write `reports/quality_report.csv` and `reports/preview_contact_sheet.jpg`. The CSV records per-sample stage status, confidence, diagnostics, file existence, and simple LR-to-HR MAE metrics. The contact sheet samples LR, aligned LR, color-matched LR, and HR side by side for quick visual checks.
 
+## Final Dataset Export
+
+Enable `export.enabled: true` to turn a quality report into a trainable dataset. Export copies only accepted samples into a separate mirrored structure:
+
+```text
+output/final/
+  LR/
+  HR/
+  manifest.csv
+```
+
+The original `LR`, `LR_aligned`, `LR_color_matched`, and `HR` folders are not overwritten. `manifest.csv` records accepted and rejected samples with a rejection reason, so thresholds can be tuned and rerun quickly.
+
+Example:
+
+```yaml
+export:
+  enabled: true
+  input_report: reports_flow/quality_report.csv
+  output_folder: final_flow
+  lr_source: aligned
+  min_align_confidence: 0.3
+  require_align_status: success
+  require_flow_status: accepted
+  max_source_to_hr_mae: 30.0
+```
+
+`lr_source` can be `raw`, `aligned`, or `color_matched`. The safest current default is `aligned`, because the baseline color matcher is still intentionally conservative and may not improve every sample.
+
 ## Configuration
 
 The main knobs are:
@@ -111,6 +140,10 @@ The main knobs are:
 - `color_match.algorithm`: color strategy name, for example `identity_color_match` or `mean_std_lab`.
 - `color_match.input_folder`: `auto` prefers `LR_aligned` and falls back to `LR`; set a folder name to force a specific input.
 - `report.enabled`: whether to generate CSV and contact-sheet quality reports after the configured stages finish.
+- `export.enabled`: whether to export accepted samples into a final trainable LR/HR dataset after report generation.
+- `export.input_report`: report CSV used as the quality gate input, for example `reports_flow/quality_report.csv`.
+- `export.lr_source`: which LR candidate to copy into the final dataset: `raw`, `aligned`, or `color_matched`.
+- `export.max_source_to_hr_mae`: optional maximum MAE threshold for the chosen LR source.
 - `output.overwrite`: whether to replace existing `LR`, `HR`, and metadata outputs.
 
 ## Output Contract

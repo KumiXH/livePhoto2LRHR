@@ -7,6 +7,7 @@ from livephoto2lrhr.config import (
     AppConfig,
     ColorMatchConfig,
     DataConfig,
+    ExportConfig,
     FrameSelectConfig,
     OutputConfig,
     PipelineConfig,
@@ -193,3 +194,32 @@ def test_run_pipeline_generates_quality_report_when_enabled(tmp_path: Path, tiny
     assert summary["report"]["rows"] == 1
     assert (output_dir / "reports" / "quality_report.csv").exists()
     assert (output_dir / "reports" / "preview_contact_sheet.jpg").exists()
+
+
+def test_run_pipeline_exports_final_dataset_when_enabled(tmp_path: Path, tiny_pair: tuple[Path, Path]):
+    image_path, _ = tiny_pair
+    output_dir = tmp_path / "output"
+    config = AppConfig(
+        data=DataConfig(input_dir=image_path.parent, output_dir=output_dir, image_exts=(".jpg",), video_exts=(".mp4",)),
+        pipeline=PipelineConfig(stages=("frame_select", "align")),
+        frame_select=FrameSelectConfig(algorithm="fake_selector", top_k=1),
+        output=OutputConfig(save_metadata=True, overwrite=True),
+        raw={"test": True},
+        align=AlignConfig(enabled=True, algorithm="identity_alignment"),
+        report=ReportConfig(enabled=True, aligned_folder="LR_aligned", max_preview_samples=0),
+        export=ExportConfig(
+            enabled=True,
+            input_report="reports/quality_report.csv",
+            output_folder="final",
+            lr_source="aligned",
+            require_align_status="success",
+        ),
+    )
+
+    summary = run_pipeline(config)
+
+    assert summary["export"]["accepted"] == 1
+    assert summary["export"]["rejected"] == 0
+    assert (output_dir / "final" / "LR" / "flower.png").exists()
+    assert (output_dir / "final" / "HR" / "flower.png").exists()
+    assert (output_dir / "final" / "manifest.csv").exists()

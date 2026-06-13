@@ -7,6 +7,7 @@ from typing import Any
 import yaml
 
 VALID_STAGES = {"frame_select", "align", "color_match"}
+VALID_EXPORT_LR_SOURCES = {"raw", "aligned", "color_matched"}
 
 
 def _normalize_ext(ext: str) -> str:
@@ -65,6 +66,37 @@ def _validate_input_folder(value: str, *, config_key: str) -> str:
             "(HR, metadata, artifacts)"
         )
     return folder
+
+
+def _validate_export_output_folder(value: str, *, config_key: str) -> str:
+    folder = value.strip()
+    path = Path(folder)
+    protected_names = {"lr", "hr", "metadata", "artifacts", "reports"}
+    if (
+        not folder
+        or path.is_absolute()
+        or len(path.parts) != 1
+        or folder in {".", ".."}
+        or any(part == ".." for part in path.parts)
+        or folder.lower() in protected_names
+    ):
+        raise ValueError(
+            f"{config_key} must be a single safe folder name outside protected outputs "
+            "(LR, HR, metadata, artifacts, reports)"
+        )
+    return folder
+
+
+def _validate_report_path(value: str, *, config_key: str) -> str:
+    path = Path(value.strip())
+    if (
+        not str(path)
+        or path.is_absolute()
+        or any(part == ".." for part in path.parts)
+        or path.name.lower() != "quality_report.csv"
+    ):
+        raise ValueError(f"{config_key} must be a relative path ending in quality_report.csv")
+    return path.as_posix()
 
 
 @dataclass(frozen=True)
@@ -164,6 +196,18 @@ class ReportConfig:
 
 
 @dataclass(frozen=True)
+class ExportConfig:
+    enabled: bool = False
+    input_report: str = "reports/quality_report.csv"
+    output_folder: str = "final"
+    lr_source: str = "aligned"
+    min_align_confidence: float = 0.0
+    require_align_status: str | None = "success"
+    require_flow_status: str | None = None
+    max_source_to_hr_mae: float | None = None
+
+
+@dataclass(frozen=True)
 class OutputConfig:
     save_metadata: bool = True
     overwrite: bool = False
@@ -179,6 +223,7 @@ class AppConfig:
     align: AlignConfig = field(default_factory=AlignConfig)
     color_match: ColorMatchConfig = field(default_factory=ColorMatchConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
+    export: ExportConfig = field(default_factory=ExportConfig)
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -293,6 +338,34 @@ def load_config(path: str | Path) -> AppConfig:
         max_preview_samples=int(report_raw.get("max_preview_samples", 24)),
         thumbnail_size=int(report_raw.get("thumbnail_size", 160)),
     )
+    export_raw: dict[str, Any] = raw.get("export", {})
+    export_lr_source = str(export_raw.get("lr_source", "aligned"))
+    if export_lr_source not in VALID_EXPORT_LR_SOURCES:
+        raise ValueError(f"export.lr_source must be one of: {sorted(VALID_EXPORT_LR_SOURCES)}")
+    max_source_to_hr_mae_raw = export_raw.get("max_source_to_hr_mae")
+    max_source_to_hr_mae = (
+        None if max_source_to_hr_mae_raw is None else float(max_source_to_hr_mae_raw)
+    )
+    require_flow_status_raw = export_raw.get("require_flow_status")
+    require_flow_status = None if require_flow_status_raw is None else str(require_flow_status_raw)
+    require_align_status_raw = export_raw.get("require_align_status", "success")
+    require_align_status = None if require_align_status_raw is None else str(require_align_status_raw)
+    export_config = ExportConfig(
+        enabled=bool(export_raw.get("enabled", False)),
+        input_report=_validate_report_path(
+            str(export_raw.get("input_report", "reports/quality_report.csv")),
+            config_key="export.input_report",
+        ),
+        output_folder=_validate_export_output_folder(
+            str(export_raw.get("output_folder", "final")),
+            config_key="export.output_folder",
+        ),
+        lr_source=export_lr_source,
+        min_align_confidence=float(export_raw.get("min_align_confidence", 0.0)),
+        require_align_status=require_align_status,
+        require_flow_status=require_flow_status,
+        max_source_to_hr_mae=max_source_to_hr_mae,
+    )
     output_raw = raw.get("output", {})
     output_config = OutputConfig(
         save_metadata=bool(output_raw.get("save_metadata", True)),
@@ -306,6 +379,7 @@ def load_config(path: str | Path) -> AppConfig:
         align=align_config,
         color_match=color_match_config,
         report=report_config,
+        export=export_config,
         output=output_config,
         raw=raw,
     )
