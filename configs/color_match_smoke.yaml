@@ -1,0 +1,43 @@
+task:
+  name: livephoto_color_match_smoke
+  seed: 42
+
+data:
+  input_dir: D:/SR数据集/花
+  output_dir: D:/SR数据集/花_pairs
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - color_match
+
+frame_select:
+  algorithm: dinov2_similarity
+
+align:
+  enabled: false
+
+color_match:
+  enabled: true
+  algorithm: mean_std_lab
+  device: cpu
+  input_folder: auto
+  output_folder: LR_color_matched
+  confidence_threshold: 0.0
+  on_failure: keep_original
+  mean_std:
+    color_space: lab
+    eps: 1.0e-6
+
+report:
+  enabled: true
+  output_folder: reports
+  max_preview_samples: 21
+  thumbnail_size: 160
+
+output:
+  save_metadata: true
+  overwrite: true

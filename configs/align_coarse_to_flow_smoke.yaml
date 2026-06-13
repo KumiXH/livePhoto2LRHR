@@ -1,0 +1,50 @@
+task:
+  name: livephoto_align_coarse_to_flow_smoke
+  seed: 42
+
+data:
+  input_dir: D:/SR数据集/花
+  output_dir: D:/SR数据集/花_pairs
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - align
+
+frame_select:
+  algorithm: dinov2_similarity
+
+align:
+  enabled: true
+  algorithm: coarse_to_flow
+  device: cpu
+  output_folder: LR_aligned_flow
+  confidence_threshold: 0.3
+  fallback_algorithm: identity_alignment
+  on_failure: keep_original
+  coarse_algorithm: phase_correlation_translation
+  phase_correlation:
+    resize_short_side: 512
+  ecc:
+    motion_model: affine
+    number_of_iterations: 100
+    termination_eps: 1.0e-5
+    gaussian_filter_size: 5
+  optical_flow:
+    enabled: true
+    algorithm: dis
+
+report:
+  enabled: true
+  output_folder: reports_flow
+  aligned_folder: LR_aligned_flow
+  color_matched_folder: LR_color_matched
+  max_preview_samples: 21
+  thumbnail_size: 160
+
+output:
+  save_metadata: true
+  overwrite: true

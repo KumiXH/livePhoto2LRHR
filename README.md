@@ -1,72 +1,128 @@
 # livePhoto2LRHR
 
-Build paired `LR` and `HR` folders from Live Photo-style image/video pairs.
+Build paired `LR` and `HR` folders from Live Photo-style image/video pairs for super-resolution training.
 
-## Phase 1
-
-Phase 1 pairs files by relative stem, selects one best LR frame from each video, and writes:
+The pipeline is YAML-driven and organized into replaceable stages:
 
 ```text
-output/
-  LR/
-  HR/
-  metadata/
-  run_summary.yaml
+image + mp4
+  -> frame selection
+  -> alignment
+  -> optional color matching
+  -> quality report
+  -> final dataset export
 ```
 
-`LR` contains only the selected frame. Top-k candidate frame indices, timestamps, and scores are recorded in metadata only.
+For the full production workflow, see [docs/operation_manual.md](docs/operation_manual.md).
 
 ## Install
 
-For the default DINOv2 selector:
+DINOv2 frame selector:
 
 ```bash
 python -m pip install -e .[dev,dinov2]
 ```
 
-For the CPU-only OpenCV baseline:
+CPU/OpenCV baseline:
 
 ```bash
 python -m pip install -e .[dev]
 ```
 
-## Run
-
-Edit `configs/frame_select.yaml`, then run:
+Run tests:
 
 ```bash
-livephoto2lrhr --config configs/frame_select.yaml
+python -m pytest -q
 ```
 
-The included default config expects test data at `D:/SR数据集/花` and writes to `D:/SR数据集/花_pairs`.
+## Quick Start
 
-## Configuration
+Copy and edit the full pipeline template:
 
-The main knobs are:
+```text
+configs/full_pipeline_template.yaml
+```
 
-- `data.input_dir`: directory containing image/video pairs with the same relative stem.
-- `data.output_dir`: output root where `LR`, `HR`, `metadata`, and `run_summary.yaml` are written.
-- `frame_select.algorithm`: selector name, for example `dinov2_similarity` or `opencv_similarity`.
-- `frame_select.device`: `auto`, `cpu`, or `cuda` for GPU-capable selectors.
-- `frame_select.resize_short_side`: DINOv2 resize and center-crop size. For `dinov2_similarity`, use a multiple of 14 such as `518`.
-- `frame_select.top_k`: number of candidate frame records to keep in metadata.
-- `output.overwrite`: whether to replace existing `LR`, `HR`, and metadata outputs.
+Set absolute input/output paths:
 
-## Output Contract
+```yaml
+data:
+  input_dir: /path/to/input
+  output_dir: /path/to/output
+```
 
-For an input pair like:
+Then run:
+
+```bash
+livephoto2lrhr --config configs/full_pipeline_template.yaml
+```
+
+Use forward-slash paths in YAML on both Windows and Linux, for example `D:/datasets/input` or `/data/datasets/input`.
+
+## Input Contract
+
+Image/video pairs are matched by the same relative stem:
 
 ```text
 input/trip/IMG_0001.jpg
 input/trip/IMG_0001.mp4
 ```
 
-the pipeline writes:
+## Output Contract
+
+The pipeline preserves mirrored LR/HR folder structure:
 
 ```text
-output/LR/trip/IMG_0001.png
-output/HR/trip/IMG_0001.png
-output/metadata/trip/IMG_0001.yaml
+output/
+  LR/
+  HR/
+  metadata/
+  LR_aligned_flow/
+  reports_flow/
+  final_flow/
+    LR/
+    HR/
+    manifest.csv
+  run_summary.yaml
 ```
 
-The `LR` and `HR` directory structures are intentionally identical so they can be compared directly by dataset tooling.
+Original `LR` and `HR` outputs are not overwritten by alignment, color matching, reports, or final export.
+
+## Current Baseline
+
+Available frame selectors:
+
+```text
+dinov2_similarity
+opencv_similarity
+fake_selector
+```
+
+Available aligners:
+
+```text
+identity_alignment
+phase_correlation_translation
+ecc_alignment
+coarse_to_flow
+```
+
+Available color matchers:
+
+```text
+identity_color_match
+mean_std_lab
+```
+
+Final export currently supports gates for `align_status`, `flow_status`, `align_confidence`, source-to-HR MAE, file existence, and overwrite safety.
+
+## Documentation
+
+Read [docs/operation_manual.md](docs/operation_manual.md) for:
+
+- Windows and Linux setup.
+- Recommended stage-by-stage workflow.
+- Report and final export usage.
+- Quality threshold tuning.
+- Advanced quality gate roadmap.
+- Advanced alignment and color matching roadmap.

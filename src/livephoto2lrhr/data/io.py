@@ -13,8 +13,19 @@ def output_image_path(output_dir: Path, folder: str, relative_stem: Path, output
     return output_dir / folder / relative_stem.parent / f"{relative_stem.name}{output_ext}"
 
 
+def output_path(output_dir: Path, folder: str, relative_stem: Path, suffix: str) -> Path:
+    normalized = suffix if suffix.startswith(".") else f".{suffix}"
+    return output_dir / folder / relative_stem.parent / f"{relative_stem.name}{normalized}"
+
+
 def metadata_path(output_dir: Path, relative_stem: Path) -> Path:
     return output_dir / "metadata" / relative_stem.parent / f"{relative_stem.name}.yaml"
+
+
+def read_rgb_array(path: Path) -> np.ndarray:
+    with Image.open(path) as source_image:
+        image = ImageOps.exif_transpose(source_image).convert("RGB")
+        return np.asarray(image)
 
 
 def save_pil_image(source_path: Path, destination_path: Path) -> None:

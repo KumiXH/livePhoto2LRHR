@@ -1,0 +1,31 @@
+task:
+  name: livephoto_align_identity_smoke
+  seed: 42
+
+data:
+  input_dir: D:/SR数据集/花
+  output_dir: D:/SR数据集/花_pairs
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - align
+
+frame_select:
+  algorithm: dinov2_similarity
+
+align:
+  enabled: true
+  algorithm: identity_alignment
+  device: cpu
+  output_folder: LR_aligned
+  confidence_threshold: 0.3
+  fallback_algorithm: identity_alignment
+  on_failure: keep_original
+
+output:
+  save_metadata: true
+  overwrite: true
