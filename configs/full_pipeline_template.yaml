@@ -1,0 +1,89 @@
+task:
+  name: livephoto_full_pipeline
+  seed: 42
+
+data:
+  # Use absolute paths on Windows or Linux.
+  # Windows example: D:/datasets/livephoto/input
+  # Linux example: /data/livephoto/input
+  input_dir: /path/to/input
+  output_dir: /path/to/output
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - frame_select
+    - align
+
+frame_select:
+  # Use dinov2_similarity for best baseline quality, opencv_similarity for CPU-only smoke tests.
+  algorithm: dinov2_similarity
+  device: auto
+  sample_fps: 15
+  top_k: 5
+  batch_size: 16
+  resize_short_side: 518
+  score_fusion:
+    feature_weight: 0.7
+    edge_weight: 0.3
+
+align:
+  enabled: true
+  algorithm: coarse_to_flow
+  device: cpu
+  output_folder: LR_aligned_flow
+  confidence_threshold: 0.3
+  fallback_algorithm: identity_alignment
+  on_failure: keep_original
+  coarse_algorithm: phase_correlation_translation
+  artifacts:
+    save_debug_overlay: false
+    save_flow: false
+    save_masks: false
+  phase_correlation:
+    resize_short_side: 512
+  ecc:
+    motion_model: affine
+    number_of_iterations: 100
+    termination_eps: 1.0e-5
+    gaussian_filter_size: 5
+  optical_flow:
+    enabled: true
+    algorithm: dis
+
+color_match:
+  enabled: false
+  algorithm: mean_std_lab
+  device: auto
+  input_folder: auto
+  output_folder: LR_color_matched
+  confidence_threshold: 0.0
+  on_failure: keep_original
+  mean_std:
+    color_space: lab
+    eps: 1.0e-6
+
+report:
+  enabled: true
+  output_folder: reports_flow
+  aligned_folder: LR_aligned_flow
+  color_matched_folder: LR_color_matched
+  max_preview_samples: 24
+  thumbnail_size: 160
+
+export:
+  enabled: true
+  input_report: reports_flow/quality_report.csv
+  output_folder: final_flow
+  lr_source: aligned
+  min_align_confidence: 0.3
+  require_align_status: success
+  require_flow_status: accepted
+  max_source_to_hr_mae: 30.0
+
+output:
+  save_metadata: true
+  overwrite: false
