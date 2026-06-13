@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +26,6 @@ class QualityReportResult:
     rows: int
     csv_path: Path
     preview_path: Path | None
-    html_path: Path | None
 
 
 CSV_FIELDS = [
@@ -75,13 +73,10 @@ def generate_quality_report(output_dir: Path, config: QualityReportConfig) -> Qu
     csv_path = report_dir / "quality_report.csv"
     _write_csv(csv_path, rows)
     preview_path = None
-    html_path = None
     if rows and config.max_preview_samples > 0:
         preview_path = report_dir / "preview_contact_sheet.jpg"
         _write_contact_sheet(preview_path, rows[: config.max_preview_samples], config.thumbnail_size)
-        html_path = report_dir / "preview_compare.html"
-        _write_html_preview(html_path, rows[: config.max_preview_samples])
-    return QualityReportResult(rows=len(rows), csv_path=csv_path, preview_path=preview_path, html_path=html_path)
+    return QualityReportResult(rows=len(rows), csv_path=csv_path, preview_path=preview_path)
 
 
 def _row_from_metadata(output_dir: Path, meta_path: Path, *, config: QualityReportConfig) -> dict[str, str]:
@@ -157,182 +152,6 @@ def _write_contact_sheet(path: Path, rows: list[dict[str, str]], thumbnail_size:
             sheet.paste(thumb, (x, y + label_h))
     path.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(path, quality=92)
-
-
-def _write_html_preview(path: Path, rows: list[dict[str, str]]) -> None:
-    cards = "\n".join(_html_card(row) for row in rows)
-    html = f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>livePhoto2LRHR Quality Preview</title>
-  <style>
-    :root {{
-      --bg: #f6f2e9;
-      --panel: #fffaf0;
-      --ink: #20201d;
-      --muted: #6d665b;
-      --line: #d8cdb8;
-      --accent: #0f766e;
-    }}
-    body {{
-      margin: 0;
-      background: radial-gradient(circle at top left, #fff8df, var(--bg) 45%, #ece4d5);
-      color: var(--ink);
-      font-family: Georgia, "Times New Roman", serif;
-    }}
-    header {{
-      padding: 32px clamp(18px, 4vw, 56px) 12px;
-    }}
-    h1 {{
-      margin: 0 0 8px;
-      font-size: clamp(28px, 4vw, 48px);
-      letter-spacing: -0.04em;
-    }}
-    .subhead {{
-      color: var(--muted);
-      margin: 0;
-      font-size: 15px;
-    }}
-    main {{
-      display: grid;
-      gap: 22px;
-      padding: 18px clamp(18px, 4vw, 56px) 48px;
-    }}
-    article {{
-      background: color-mix(in srgb, var(--panel) 92%, white);
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      box-shadow: 0 18px 50px rgba(65, 55, 36, 0.10);
-      overflow: hidden;
-    }}
-    .meta {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 14px;
-      align-items: baseline;
-      padding: 18px 20px 10px;
-      border-bottom: 1px solid var(--line);
-    }}
-    .sample {{
-      font-weight: 700;
-      font-size: 18px;
-      margin-right: auto;
-    }}
-    .pill {{
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      color: var(--muted);
-      padding: 4px 9px;
-      font-size: 12px;
-      background: #fffdf7;
-    }}
-    .grid {{
-      display: grid;
-      grid-template-columns: repeat(4, minmax(160px, 1fr));
-      gap: 1px;
-      background: var(--line);
-    }}
-    figure {{
-      margin: 0;
-      background: #fdf8ec;
-      padding: 12px;
-    }}
-    figcaption {{
-      color: var(--muted);
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      font-size: 12px;
-      margin-bottom: 8px;
-    }}
-    img {{
-      display: block;
-      width: 100%;
-      max-height: 280px;
-      object-fit: contain;
-      background: #e6ddcb;
-      border-radius: 12px;
-    }}
-    .missing {{
-      display: grid;
-      place-items: center;
-      min-height: 180px;
-      color: var(--muted);
-      background: repeating-linear-gradient(45deg, #f3eadb, #f3eadb 10px, #eadfca 10px, #eadfca 20px);
-      border-radius: 12px;
-    }}
-    @media (max-width: 900px) {{
-      .grid {{
-        grid-template-columns: repeat(2, minmax(140px, 1fr));
-      }}
-    }}
-    @media (max-width: 560px) {{
-      .grid {{
-        grid-template-columns: 1fr;
-      }}
-    }}
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Quality Preview</h1>
-    <p class="subhead">LR, aligned LR, color matched LR, and HR side by side with selection and quality signals.</p>
-  </header>
-  <main>
-{cards}
-  </main>
-</body>
-</html>
-"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(html, encoding="utf-8")
-
-
-def _html_card(row: dict[str, str]) -> str:
-    metrics = [
-        ("align", row["align_status"]),
-        ("flow", row["flow_status"]),
-        ("align_conf", row["align_confidence"]),
-        ("frame_score", row["frame_select_score"]),
-    ]
-    metric_html = "\n".join(
-        f'<span class="pill">{escape(label)}: {escape(value or "-")}</span>' for label, value in metrics
-    )
-    figures = "\n".join(
-        _html_figure(label, row[path_key], mae_key, row.get(mae_key, ""))
-        for label, path_key, mae_key in (
-            ("LR", "lr_path", "lr_to_hr_mae"),
-            ("Aligned LR", "aligned_path", "aligned_to_hr_mae"),
-            ("Color Matched LR", "color_matched_path", "color_matched_to_hr_mae"),
-            ("HR", "hr_path", ""),
-        )
-    )
-    return f"""    <article>
-      <section class="meta">
-        <div class="sample">{escape(row["sample_id"])}</div>
-        {metric_html}
-      </section>
-      <section class="grid">
-{figures}
-      </section>
-    </article>"""
-
-
-def _html_figure(label: str, image_path: str, mae_key: str, mae: str) -> str:
-    path = Path(image_path)
-    metric = ""
-    if mae:
-        metric = f"{escape(mae_key)}: {escape(mae)}"
-    if not image_path or not path.exists():
-        body = '<div class="missing">missing</div>'
-    else:
-        body = f'<img src="{escape(path.as_posix())}" alt="{escape(label)}">'
-    return f"""        <figure>
-          <figcaption><strong>{escape(label)}</strong><span>{metric}</span></figcaption>
-          {body}
-        </figure>"""
 
 
 def _thumbnail(path: Path, size: int) -> Image.Image:
