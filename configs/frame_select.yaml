@@ -25,6 +25,29 @@ frame_select:
     feature_weight: 0.7
     edge_weight: 0.3
 
+align:
+  enabled: false
+  algorithm: identity_alignment
+  device: auto
+  output_folder: LR_aligned
+  confidence_threshold: 0.3
+  fallback_algorithm: identity_alignment
+  on_failure: keep_original
+  artifacts:
+    save_debug_overlay: false
+    save_flow: false
+    save_masks: false
+  phase_correlation:
+    resize_short_side: 512
+  ecc:
+    motion_model: affine
+    number_of_iterations: 100
+    termination_eps: 1.0e-5
+    gaussian_filter_size: 5
+  optical_flow:
+    enabled: false
+    algorithm: dis
+
 output:
   save_metadata: true
   overwrite: false

@@ -40,6 +40,31 @@ livephoto2lrhr --config configs/frame_select.yaml
 
 The included default config expects test data at `D:/SR数据集/花` and writes to `D:/SR数据集/花_pairs`.
 
+## Phase 2 Alignment
+
+Phase 2 is optional and disabled by default. To run alignment after frame selection, add `align` to the pipeline stages and set `align.enabled: true`:
+
+```yaml
+pipeline:
+  stages:
+    - frame_select
+    - align
+
+align:
+  enabled: true
+  algorithm: identity_alignment
+```
+
+Alignment writes `LR_aligned/` and updates each sample metadata with `align.confidence`, `align.transforms`, `align.artifacts`, and diagnostics. Original `LR/` and `HR/` files are never overwritten.
+
+Available baseline aligners:
+
+- `identity_alignment`: copies LR into `LR_aligned` and validates the stage/output contract.
+- `phase_correlation_translation`: estimates global translation with OpenCV phase correlation.
+- `ecc_alignment`: estimates OpenCV ECC translation/euclidean/affine/homography transforms.
+
+Future SAM, RAFT, LoFTR, LightGlue, or fusion-network aligners can plug into the same alignment registry and metadata contract.
+
 ## Configuration
 
 The main knobs are:
@@ -50,6 +75,8 @@ The main knobs are:
 - `frame_select.device`: `auto`, `cpu`, or `cuda` for GPU-capable selectors.
 - `frame_select.resize_short_side`: DINOv2 resize and center-crop size. For `dinov2_similarity`, use a multiple of 14 such as `518`.
 - `frame_select.top_k`: number of candidate frame records to keep in metadata.
+- `align.enabled`: whether phase 2 alignment runs.
+- `align.algorithm`: alignment strategy name, for example `identity_alignment`, `phase_correlation_translation`, or `ecc_alignment`.
 - `output.overwrite`: whether to replace existing `LR`, `HR`, and metadata outputs.
 
 ## Output Contract
