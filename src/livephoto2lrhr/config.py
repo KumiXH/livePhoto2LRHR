@@ -27,7 +27,7 @@ def _resolve_config_path(config_dir: Path, value: str) -> Path:
     return path.resolve()
 
 
-def _validate_align_output_folder(value: str) -> str:
+def _validate_output_folder(value: str, *, config_key: str) -> str:
     folder = value.strip()
     path = Path(folder)
     protected_names = {"lr", "hr", "metadata", "artifacts"}
@@ -40,8 +40,29 @@ def _validate_align_output_folder(value: str) -> str:
         or folder.lower() in protected_names
     ):
         raise ValueError(
-            "align.output_folder must be a single safe folder name outside protected outputs "
+            f"{config_key} must be a single safe folder name outside protected outputs "
             "(LR, HR, metadata, artifacts)"
+        )
+    return folder
+
+
+def _validate_input_folder(value: str, *, config_key: str) -> str:
+    folder = value.strip()
+    if folder == "auto":
+        return folder
+    path = Path(folder)
+    protected_names = {"hr", "metadata", "artifacts"}
+    if (
+        not folder
+        or path.is_absolute()
+        or len(path.parts) != 1
+        or folder in {".", ".."}
+        or any(part == ".." for part in path.parts)
+        or folder.lower() in protected_names
+    ):
+        raise ValueError(
+            f"{config_key} must be 'auto' or a single safe LR-like folder name outside protected outputs "
+            "(HR, metadata, artifacts)"
         )
     return folder
 
@@ -99,6 +120,12 @@ class OpticalFlowConfig:
 
 
 @dataclass(frozen=True)
+class MeanStdColorMatchConfig:
+    color_space: str = "lab"
+    eps: float = 1.0e-6
+
+
+@dataclass(frozen=True)
 class AlignConfig:
     enabled: bool = False
     algorithm: str = "identity_alignment"
@@ -115,6 +142,18 @@ class AlignConfig:
 
 
 @dataclass(frozen=True)
+class ColorMatchConfig:
+    enabled: bool = False
+    algorithm: str = "identity_color_match"
+    device: str = "auto"
+    input_folder: str = "auto"
+    output_folder: str = "LR_color_matched"
+    confidence_threshold: float = 0.0
+    on_failure: str = "keep_original"
+    mean_std: MeanStdColorMatchConfig = MeanStdColorMatchConfig()
+
+
+@dataclass(frozen=True)
 class OutputConfig:
     save_metadata: bool = True
     overwrite: bool = False
@@ -128,6 +167,7 @@ class AppConfig:
     output: OutputConfig
     raw: dict[str, Any]
     align: AlignConfig = field(default_factory=AlignConfig)
+    color_match: ColorMatchConfig = field(default_factory=ColorMatchConfig)
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -179,7 +219,10 @@ def load_config(path: str | Path) -> AppConfig:
         enabled=bool(align_raw.get("enabled", False)),
         algorithm=str(align_raw.get("algorithm", "identity_alignment")),
         device=str(align_raw.get("device", "auto")),
-        output_folder=_validate_align_output_folder(str(align_raw.get("output_folder", "LR_aligned"))),
+        output_folder=_validate_output_folder(
+            str(align_raw.get("output_folder", "LR_aligned")),
+            config_key="align.output_folder",
+        ),
         confidence_threshold=float(align_raw.get("confidence_threshold", 0.3)),
         fallback_algorithm=str(align_raw.get("fallback_algorithm", "identity_alignment")),
         on_failure=str(align_raw.get("on_failure", "keep_original")),
@@ -203,6 +246,27 @@ def load_config(path: str | Path) -> AppConfig:
             algorithm=str(optical_flow_raw.get("algorithm", "dis")),
         ),
     )
+    color_raw: dict[str, Any] = raw.get("color_match", {})
+    mean_std_raw: dict[str, Any] = color_raw.get("mean_std", {})
+    color_match_config = ColorMatchConfig(
+        enabled=bool(color_raw.get("enabled", False)),
+        algorithm=str(color_raw.get("algorithm", "identity_color_match")),
+        device=str(color_raw.get("device", "auto")),
+        input_folder=_validate_input_folder(
+            str(color_raw.get("input_folder", "auto")),
+            config_key="color_match.input_folder",
+        ),
+        output_folder=_validate_output_folder(
+            str(color_raw.get("output_folder", "LR_color_matched")),
+            config_key="color_match.output_folder",
+        ),
+        confidence_threshold=float(color_raw.get("confidence_threshold", 0.0)),
+        on_failure=str(color_raw.get("on_failure", "keep_original")),
+        mean_std=MeanStdColorMatchConfig(
+            color_space=str(mean_std_raw.get("color_space", "lab")),
+            eps=float(mean_std_raw.get("eps", 1.0e-6)),
+        ),
+    )
     output_raw = raw.get("output", {})
     output_config = OutputConfig(
         save_metadata=bool(output_raw.get("save_metadata", True)),
@@ -214,6 +278,7 @@ def load_config(path: str | Path) -> AppConfig:
         pipeline=pipeline_config,
         frame_select=frame_select_config,
         align=align_config,
+        color_match=color_match_config,
         output=output_config,
         raw=raw,
     )

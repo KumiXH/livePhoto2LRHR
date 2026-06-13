@@ -1,8 +1,7 @@
-from livephoto2lrhr.stages.color_match import ColorMatchStage
+from livephoto2lrhr.config import ColorMatchConfig
 
 
-def test_color_match_stage_is_explicitly_not_implemented():
-    stage = ColorMatchStage(enabled=False)
+def test_color_match_stage_is_disabled_by_default():
+    config = ColorMatchConfig()
 
-    assert stage.enabled is False
-    assert stage.describe() == "color_match stage is reserved for phase 3"
+    assert config.enabled is False

@@ -4,11 +4,13 @@ from collections import Counter
 from typing import Any
 
 from livephoto2lrhr.algorithms.alignment import build_alignment_registry
+from livephoto2lrhr.algorithms.color_match import build_color_match_registry
 from livephoto2lrhr.algorithms.similarity import build_similarity_registry
 from livephoto2lrhr.config import AppConfig
 from livephoto2lrhr.data.io import write_yaml
 from livephoto2lrhr.data.pairing import discover_pairs
 from livephoto2lrhr.stages.align import AlignStage
+from livephoto2lrhr.stages.color_match import ColorMatchStage
 from livephoto2lrhr.stages.frame_select import FrameSelectStage
 
 
@@ -22,6 +24,15 @@ KNOWN_ALIGN_STATUSES = (
     "align_failed",
     "align_write_failed",
 )
+KNOWN_COLOR_MATCH_STATUSES = (
+    "color_match_success",
+    "color_match_skipped_disabled",
+    "color_match_skipped_existing",
+    "color_match_skipped_missing_input",
+    "color_match_skipped_low_confidence",
+    "color_match_failed",
+    "color_match_write_failed",
+)
 
 
 def run_pipeline(config: AppConfig) -> dict[str, Any]:
@@ -31,7 +42,9 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         video_exts=config.data.video_exts,
         recursive=config.data.recursive,
     )
-    counts: Counter[str] = Counter({status: 0 for status in (*KNOWN_PHASE_1_STATUSES, *KNOWN_ALIGN_STATUSES)})
+    counts: Counter[str] = Counter(
+        {status: 0 for status in (*KNOWN_PHASE_1_STATUSES, *KNOWN_ALIGN_STATUSES, *KNOWN_COLOR_MATCH_STATUSES)}
+    )
     samples: list[dict[str, str]] = []
 
     if "frame_select" in config.pipeline.stages:
@@ -93,6 +106,32 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
                 counts[result.status] += 1
                 samples.append({"sample_id": result.sample_id, "status": result.status, "message": result.message})
 
+    if "color_match" in config.pipeline.stages:
+        if not config.color_match.enabled:
+            counts["color_match_skipped_disabled"] += len(pair_result.pairs)
+        else:
+            registry = build_color_match_registry()
+            matcher_config = _color_match_algorithm_config(config)
+            matcher = registry.create(config.color_match.algorithm, matcher_config)
+            stage = ColorMatchStage(
+                output_dir=config.data.output_dir,
+                output_ext=config.data.output_ext,
+                input_folder=config.color_match.input_folder,
+                output_folder=config.color_match.output_folder,
+                overwrite=config.output.overwrite,
+                save_metadata=config.output.save_metadata,
+                matcher=matcher,
+                algorithm_name=config.color_match.algorithm,
+                algorithm_config=matcher_config,
+                confidence_threshold=config.color_match.confidence_threshold,
+                on_failure=config.color_match.on_failure,
+                device=config.color_match.device,
+            )
+            for pair in pair_result.pairs:
+                result = stage.run(pair)
+                counts[result.status] += 1
+                samples.append({"sample_id": result.sample_id, "status": result.status, "message": result.message})
+
     summary: dict[str, Any] = {
         "counts": dict(counts),
         "pair_discovery": {
@@ -120,4 +159,13 @@ def _alignment_algorithm_config(config: AppConfig) -> dict[str, Any]:
         "resize_short_side": config.align.phase_correlation.resize_short_side,
         "optical_flow": config.align.optical_flow,
         "artifacts": config.align.artifacts,
+    }
+
+
+def _color_match_algorithm_config(config: AppConfig) -> dict[str, Any]:
+    return {
+        "device": config.color_match.device,
+        "color_space": config.color_match.mean_std.color_space,
+        "eps": config.color_match.mean_std.eps,
+        "mean_std": config.color_match.mean_std,
     }

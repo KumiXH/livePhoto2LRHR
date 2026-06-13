@@ -66,6 +66,29 @@ Available baseline aligners:
 
 Future SAM, RAFT, LoFTR, LightGlue, or fusion-network aligners can plug into the same alignment registry and metadata contract.
 
+## Phase 3 Color Matching
+
+Phase 3 is optional and disabled by default. It reads `LR_aligned/` when available, otherwise `LR/`, then writes color-normalized samples to `LR_color_matched/` without overwriting earlier outputs.
+
+```yaml
+pipeline:
+  stages:
+    - frame_select
+    - align
+    - color_match
+
+color_match:
+  enabled: true
+  algorithm: mean_std_lab
+```
+
+Available baseline color matchers:
+
+- `identity_color_match`: copies the selected/aligned LR image and validates the color-match contract.
+- `mean_std_lab`: matches per-channel mean/std statistics in LAB by default, with `mean_std.color_space: rgb` also available.
+
+Future LUT, Retinex, neural color-transfer, or fusion-controller matchers can plug into the same registry and metadata contract.
+
 ## Configuration
 
 The main knobs are:
@@ -80,6 +103,9 @@ The main knobs are:
 - `align.algorithm`: alignment strategy name, for example `identity_alignment`, `phase_correlation_translation`, or `ecc_alignment`.
 - `align.coarse_algorithm`: coarse strategy used by `coarse_to_flow`, for example `phase_correlation_translation` or `ecc_alignment`.
 - `align.fallback_algorithm`: fallback strategy used when the primary aligner fails or falls below `align.confidence_threshold`.
+- `color_match.enabled`: whether phase 3 color matching runs.
+- `color_match.algorithm`: color strategy name, for example `identity_color_match` or `mean_std_lab`.
+- `color_match.input_folder`: `auto` prefers `LR_aligned` and falls back to `LR`; set a folder name to force a specific input.
 - `output.overwrite`: whether to replace existing `LR`, `HR`, and metadata outputs.
 
 ## Output Contract

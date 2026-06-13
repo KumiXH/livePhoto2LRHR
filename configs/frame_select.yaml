@@ -48,6 +48,18 @@ align:
     enabled: false
     algorithm: dis
 
+color_match:
+  enabled: false
+  algorithm: mean_std_lab
+  device: auto
+  input_folder: auto
+  output_folder: LR_color_matched
+  confidence_threshold: 0.0
+  on_failure: keep_original
+  mean_std:
+    color_space: lab
+    eps: 1.0e-6
+
 output:
   save_metadata: true
   overwrite: false

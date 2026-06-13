@@ -2,7 +2,15 @@ from pathlib import Path
 
 import yaml
 
-from livephoto2lrhr.config import AlignConfig, AppConfig, DataConfig, FrameSelectConfig, OutputConfig, PipelineConfig
+from livephoto2lrhr.config import (
+    AlignConfig,
+    AppConfig,
+    ColorMatchConfig,
+    DataConfig,
+    FrameSelectConfig,
+    OutputConfig,
+    PipelineConfig,
+)
 from livephoto2lrhr.pipeline.runner import run_pipeline
 
 
@@ -143,3 +151,25 @@ def test_run_pipeline_uses_fallback_alignment(tmp_path: Path, tiny_pair: tuple[P
     assert summary["counts"]["align_success"] == 1
     assert (output_dir / "LR_aligned" / "flower.png").exists()
     assert metadata["align"]["diagnostics"]["fallback_used"] is True
+
+
+def test_run_pipeline_runs_color_match_after_frame_select(tmp_path: Path, tiny_pair: tuple[Path, Path]):
+    image_path, _ = tiny_pair
+    output_dir = tmp_path / "output"
+    config = AppConfig(
+        data=DataConfig(input_dir=image_path.parent, output_dir=output_dir, image_exts=(".jpg",), video_exts=(".mp4",)),
+        pipeline=PipelineConfig(stages=("frame_select", "color_match")),
+        frame_select=FrameSelectConfig(algorithm="fake_selector", top_k=1),
+        output=OutputConfig(save_metadata=True, overwrite=False),
+        raw={"test": True},
+        color_match=ColorMatchConfig(enabled=True, algorithm="identity_color_match"),
+    )
+
+    summary = run_pipeline(config)
+
+    matched_path = output_dir / "LR_color_matched" / "flower.png"
+    metadata = yaml.safe_load((output_dir / "metadata" / "flower.yaml").read_text(encoding="utf-8"))
+    assert summary["counts"]["color_match_success"] == 1
+    assert matched_path.exists()
+    assert metadata["status"]["color_matched"] is True
+    assert metadata["color_match"]["algorithm"] == "identity_color_match"
