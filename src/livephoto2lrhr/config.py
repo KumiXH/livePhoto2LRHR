@@ -27,6 +27,25 @@ def _resolve_config_path(config_dir: Path, value: str) -> Path:
     return path.resolve()
 
 
+def _validate_align_output_folder(value: str) -> str:
+    folder = value.strip()
+    path = Path(folder)
+    protected_names = {"lr", "hr", "metadata", "artifacts"}
+    if (
+        not folder
+        or path.is_absolute()
+        or len(path.parts) != 1
+        or folder in {".", ".."}
+        or any(part == ".." for part in path.parts)
+        or folder.lower() in protected_names
+    ):
+        raise ValueError(
+            "align.output_folder must be a single safe folder name outside protected outputs "
+            "(LR, HR, metadata, artifacts)"
+        )
+    return folder
+
+
 @dataclass(frozen=True)
 class DataConfig:
     input_dir: Path
@@ -88,6 +107,7 @@ class AlignConfig:
     confidence_threshold: float = 0.3
     fallback_algorithm: str = "identity_alignment"
     on_failure: str = "keep_original"
+    coarse_algorithm: str = "phase_correlation_translation"
     artifacts: AlignArtifactsConfig = AlignArtifactsConfig()
     phase_correlation: PhaseCorrelationConfig = PhaseCorrelationConfig()
     ecc: ECCConfig = ECCConfig()
@@ -159,10 +179,11 @@ def load_config(path: str | Path) -> AppConfig:
         enabled=bool(align_raw.get("enabled", False)),
         algorithm=str(align_raw.get("algorithm", "identity_alignment")),
         device=str(align_raw.get("device", "auto")),
-        output_folder=str(align_raw.get("output_folder", "LR_aligned")),
+        output_folder=_validate_align_output_folder(str(align_raw.get("output_folder", "LR_aligned"))),
         confidence_threshold=float(align_raw.get("confidence_threshold", 0.3)),
         fallback_algorithm=str(align_raw.get("fallback_algorithm", "identity_alignment")),
         on_failure=str(align_raw.get("on_failure", "keep_original")),
+        coarse_algorithm=str(align_raw.get("coarse_algorithm", "phase_correlation_translation")),
         artifacts=AlignArtifactsConfig(
             save_debug_overlay=bool(align_artifacts_raw.get("save_debug_overlay", False)),
             save_flow=bool(align_artifacts_raw.get("save_flow", False)),

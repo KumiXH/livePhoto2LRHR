@@ -31,10 +31,10 @@ class ECCAligner:
 
     def align(self, lr_rgb: np.ndarray, hr_rgb: np.ndarray, context: AlignmentContext) -> AlignResult:
         try:
-            lr_gray = self._gray_float(lr_rgb)
+            lr_rgb_work = self._resize_rgb_to_hr(lr_rgb, hr_rgb)
+            lr_gray = self._gray_float(lr_rgb_work)
             hr_gray = self._gray_float(hr_rgb)
-            if lr_gray.shape != hr_gray.shape:
-                lr_gray = cv2.resize(lr_gray, (hr_gray.shape[1], hr_gray.shape[0]), interpolation=cv2.INTER_AREA)
+            pre_error = self._mse(lr_gray, hr_gray)
             warp_matrix = self._initial_matrix()
             criteria = (
                 cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
@@ -50,7 +50,8 @@ class ECCAligner:
                 None,
                 self.gaussian_filter_size,
             )
-            aligned = self._warp(lr_rgb, hr_rgb, warp_matrix)
+            aligned = self._warp(lr_rgb_work, hr_rgb, warp_matrix)
+            post_error = self._mse(self._gray_float(aligned), hr_gray)
         except Exception as exc:
             return AlignResult(
                 aligned_lr_rgb=None,
@@ -78,6 +79,8 @@ class ECCAligner:
                 "number_of_iterations": self.number_of_iterations,
                 "termination_eps": self.termination_eps,
                 "gaussian_filter_size": self.gaussian_filter_size,
+                "pre_alignment_error": pre_error,
+                "post_alignment_error": post_error,
             },
         )
 
@@ -107,3 +110,12 @@ class ECCAligner:
             flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
             borderMode=cv2.BORDER_REFLECT,
         )
+
+    def _resize_rgb_to_hr(self, lr_rgb: np.ndarray, hr_rgb: np.ndarray) -> np.ndarray:
+        target_height, target_width = hr_rgb.shape[:2]
+        if lr_rgb.shape[:2] == (target_height, target_width):
+            return lr_rgb
+        return cv2.resize(lr_rgb, (target_width, target_height), interpolation=cv2.INTER_CUBIC)
+
+    def _mse(self, left: np.ndarray, right: np.ndarray) -> float:
+        return float(np.mean((left.astype(np.float32) - right.astype(np.float32)) ** 2))

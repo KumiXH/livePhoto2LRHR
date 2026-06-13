@@ -118,3 +118,28 @@ def test_run_pipeline_does_not_align_when_disabled(tmp_path: Path, tiny_pair: tu
     assert summary["counts"]["success"] == 1
     assert summary["counts"]["align_skipped_disabled"] == 1
     assert not (output_dir / "LR_aligned" / "flower.png").exists()
+
+
+def test_run_pipeline_uses_fallback_alignment(tmp_path: Path, tiny_pair: tuple[Path, Path]):
+    image_path, _ = tiny_pair
+    output_dir = tmp_path / "output"
+    config = AppConfig(
+        data=DataConfig(input_dir=image_path.parent, output_dir=output_dir, image_exts=(".jpg",), video_exts=(".mp4",)),
+        pipeline=PipelineConfig(stages=("frame_select", "align")),
+        frame_select=FrameSelectConfig(algorithm="fake_selector", top_k=1),
+        output=OutputConfig(save_metadata=True, overwrite=False),
+        raw={"test": True},
+        align=AlignConfig(
+            enabled=True,
+            algorithm="ecc_alignment",
+            fallback_algorithm="identity_alignment",
+            confidence_threshold=0.3,
+        ),
+    )
+
+    summary = run_pipeline(config)
+
+    metadata = yaml.safe_load((output_dir / "metadata" / "flower.yaml").read_text(encoding="utf-8"))
+    assert summary["counts"]["align_success"] == 1
+    assert (output_dir / "LR_aligned" / "flower.png").exists()
+    assert metadata["align"]["diagnostics"]["fallback_used"] is True

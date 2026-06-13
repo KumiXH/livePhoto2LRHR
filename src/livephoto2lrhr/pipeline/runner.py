@@ -65,20 +65,13 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
             counts["align_skipped_disabled"] += len(pair_result.pairs)
         else:
             registry = build_alignment_registry()
-            aligner = registry.create(
-                config.align.algorithm,
-                {
-                    "device": config.align.device,
-                    "phase_correlation": config.align.phase_correlation,
-                    "motion_model": config.align.ecc.motion_model,
-                    "number_of_iterations": config.align.ecc.number_of_iterations,
-                    "termination_eps": config.align.ecc.termination_eps,
-                    "gaussian_filter_size": config.align.ecc.gaussian_filter_size,
-                    "resize_short_side": config.align.phase_correlation.resize_short_side,
-                    "optical_flow": config.align.optical_flow,
-                    "artifacts": config.align.artifacts,
-                },
-            )
+            aligner_config = _alignment_algorithm_config(config)
+            aligner = registry.create(config.align.algorithm, aligner_config)
+            fallback_aligner = None
+            fallback_config = None
+            if config.align.fallback_algorithm and config.align.fallback_algorithm != config.align.algorithm:
+                fallback_config = _alignment_algorithm_config(config)
+                fallback_aligner = registry.create(config.align.fallback_algorithm, fallback_config)
             stage = AlignStage(
                 output_dir=config.data.output_dir,
                 output_ext=config.data.output_ext,
@@ -87,6 +80,10 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
                 save_metadata=config.output.save_metadata,
                 aligner=aligner,
                 algorithm_name=config.align.algorithm,
+                algorithm_config=aligner_config,
+                fallback_aligner=fallback_aligner,
+                fallback_algorithm_name=config.align.fallback_algorithm,
+                fallback_algorithm_config=fallback_config,
                 confidence_threshold=config.align.confidence_threshold,
                 on_failure=config.align.on_failure,
                 device=config.align.device,
@@ -109,3 +106,18 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
     }
     write_yaml(config.data.output_dir / "run_summary.yaml", summary)
     return summary
+
+
+def _alignment_algorithm_config(config: AppConfig) -> dict[str, Any]:
+    return {
+        "device": config.align.device,
+        "phase_correlation": config.align.phase_correlation,
+        "coarse_algorithm": config.align.coarse_algorithm,
+        "motion_model": config.align.ecc.motion_model,
+        "number_of_iterations": config.align.ecc.number_of_iterations,
+        "termination_eps": config.align.ecc.termination_eps,
+        "gaussian_filter_size": config.align.ecc.gaussian_filter_size,
+        "resize_short_side": config.align.phase_correlation.resize_short_side,
+        "optical_flow": config.align.optical_flow,
+        "artifacts": config.align.artifacts,
+    }

@@ -62,6 +62,7 @@ Available baseline aligners:
 - `identity_alignment`: copies LR into `LR_aligned` and validates the stage/output contract.
 - `phase_correlation_translation`: estimates global translation with OpenCV phase correlation.
 - `ecc_alignment`: estimates OpenCV ECC translation/euclidean/affine/homography transforms.
+- `coarse_to_flow`: runs a configurable coarse aligner now and reserves the local optical-flow refinement slot.
 
 Future SAM, RAFT, LoFTR, LightGlue, or fusion-network aligners can plug into the same alignment registry and metadata contract.
 
@@ -77,6 +78,8 @@ The main knobs are:
 - `frame_select.top_k`: number of candidate frame records to keep in metadata.
 - `align.enabled`: whether phase 2 alignment runs.
 - `align.algorithm`: alignment strategy name, for example `identity_alignment`, `phase_correlation_translation`, or `ecc_alignment`.
+- `align.coarse_algorithm`: coarse strategy used by `coarse_to_flow`, for example `phase_correlation_translation` or `ecc_alignment`.
+- `align.fallback_algorithm`: fallback strategy used when the primary aligner fails or falls below `align.confidence_threshold`.
 - `output.overwrite`: whether to replace existing `LR`, `HR`, and metadata outputs.
 
 ## Output Contract

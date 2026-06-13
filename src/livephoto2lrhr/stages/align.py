@@ -35,6 +35,10 @@ class AlignStage:
         save_metadata: bool,
         aligner: Aligner,
         algorithm_name: str,
+        algorithm_config: dict[str, Any] | None = None,
+        fallback_aligner: Aligner | None = None,
+        fallback_algorithm_name: str | None = None,
+        fallback_algorithm_config: dict[str, Any] | None = None,
         confidence_threshold: float,
         on_failure: str,
         device: str,
@@ -46,6 +50,10 @@ class AlignStage:
         self.save_metadata = save_metadata
         self.aligner = aligner
         self.algorithm_name = algorithm_name
+        self.algorithm_config = algorithm_config or {}
+        self.fallback_aligner = fallback_aligner
+        self.fallback_algorithm_name = fallback_algorithm_name
+        self.fallback_algorithm_config = fallback_algorithm_config or {}
         self.confidence_threshold = confidence_threshold
         self.on_failure = on_failure
         self.device = device
@@ -65,20 +73,24 @@ class AlignStage:
         if not self.overwrite and aligned_path.exists():
             return AlignStageResult(sample_id=pair.sample_id, status="align_skipped_existing")
 
+        metadata: dict[str, Any] = {}
+        lr_rgb = None
         try:
-            metadata = self._read_metadata(meta_path)
             lr_rgb = read_rgb_array(lr_path)
             hr_rgb = read_rgb_array(hr_path)
-            context = AlignmentContext(
-                sample_id=pair.sample_id,
+            if self.save_metadata and meta_path.exists():
+                metadata = self._read_metadata(meta_path)
+            align_result, result_algorithm = self._run_alignment(
+                aligner=self.aligner,
+                algorithm_name=self.algorithm_name,
+                algorithm_config=self.algorithm_config,
+                lr_rgb=lr_rgb,
+                hr_rgb=hr_rgb,
+                pair=pair,
                 lr_path=lr_path,
                 hr_path=hr_path,
                 metadata=metadata,
-                config={},
-                artifact_root=self.output_dir / "artifacts" / "alignment" / pair.relative_stem,
-                device=self.device,
             )
-            align_result = self.aligner.align(lr_rgb, hr_rgb, context)
         except Exception as exc:
             align_result = AlignResult(
                 aligned_lr_rgb=None,
@@ -86,11 +98,49 @@ class AlignStage:
                 confidence=0.0,
                 message=str(exc),
             )
+            result_algorithm = self.algorithm_name
 
         accepted = align_result.status == "success" and align_result.confidence >= self.confidence_threshold
-        final_status = "align_success" if accepted else "align_failed"
+        fallback_used = False
+        if not accepted and self.fallback_aligner is not None:
+            try:
+                fallback_result, fallback_algorithm = self._run_alignment(
+                    aligner=self.fallback_aligner,
+                    algorithm_name=self.fallback_algorithm_name or "fallback",
+                    algorithm_config=self.fallback_algorithm_config,
+                    lr_rgb=lr_rgb,
+                    hr_rgb=hr_rgb,
+                    pair=pair,
+                    lr_path=lr_path,
+                    hr_path=hr_path,
+                    metadata=metadata,
+                )
+                fallback_accepted = (
+                    fallback_result.status == "success" and fallback_result.confidence >= self.confidence_threshold
+                )
+                if fallback_accepted:
+                    align_result = self._with_fallback_diagnostics(fallback_result, fallback_from=result_algorithm)
+                    result_algorithm = fallback_algorithm
+                    accepted = True
+                    fallback_used = True
+            except Exception as exc:
+                align_result = self._with_fallback_failure(align_result, str(exc))
+
+        low_confidence = align_result.status == "success" and align_result.confidence < self.confidence_threshold
+        if accepted:
+            final_status = "align_success"
+            metadata_status = "success"
+        elif low_confidence:
+            final_status = "align_skipped_low_confidence"
+            metadata_status = "skipped_low_confidence"
+        else:
+            final_status = "align_failed"
+            metadata_status = align_result.status
+
         output_rgb = align_result.aligned_lr_rgb
-        if not accepted and self.on_failure == "keep_original":
+        if not accepted and self.on_failure == "skip":
+            output_rgb = None
+        elif not accepted and self.on_failure == "keep_original":
             output_rgb = lr_rgb
 
         try:
@@ -103,11 +153,68 @@ class AlignStage:
                     aligned_path=aligned_path if output_rgb is not None else None,
                     align_result=align_result,
                     aligned=accepted,
+                    algorithm_name=result_algorithm,
+                    metadata_status=metadata_status,
+                    fallback_used=fallback_used,
                 )
         except Exception as exc:
             return AlignStageResult(sample_id=pair.sample_id, status="align_write_failed", message=str(exc))
 
         return AlignStageResult(sample_id=pair.sample_id, status=final_status, message=align_result.message)
+
+    def _run_alignment(
+        self,
+        *,
+        aligner: Aligner,
+        algorithm_name: str,
+        algorithm_config: dict[str, Any],
+        lr_rgb,
+        hr_rgb,
+        pair: SamplePair,
+        lr_path: Path,
+        hr_path: Path,
+        metadata: dict[str, Any],
+    ) -> tuple[AlignResult, str]:
+        if lr_rgb is None or hr_rgb is None:
+            raise RuntimeError("phase 1 images were not loaded")
+        context = AlignmentContext(
+            sample_id=pair.sample_id,
+            lr_path=lr_path,
+            hr_path=hr_path,
+            metadata=metadata,
+            config=algorithm_config,
+            artifact_root=self.output_dir / "artifacts" / "alignment" / pair.relative_stem,
+            device=self.device,
+        )
+        return aligner.align(lr_rgb, hr_rgb, context), algorithm_name
+
+    def _with_fallback_diagnostics(self, result: AlignResult, *, fallback_from: str) -> AlignResult:
+        diagnostics = dict(result.diagnostics)
+        diagnostics["fallback_used"] = True
+        diagnostics["fallback_from"] = fallback_from
+        return AlignResult(
+            aligned_lr_rgb=result.aligned_lr_rgb,
+            status=result.status,
+            confidence=result.confidence,
+            message=result.message,
+            transforms=result.transforms,
+            artifacts=result.artifacts,
+            diagnostics=diagnostics,
+        )
+
+    def _with_fallback_failure(self, result: AlignResult, message: str) -> AlignResult:
+        diagnostics = dict(result.diagnostics)
+        diagnostics["fallback_used"] = False
+        diagnostics["fallback_error"] = message
+        return AlignResult(
+            aligned_lr_rgb=result.aligned_lr_rgb,
+            status=result.status,
+            confidence=result.confidence,
+            message=result.message,
+            transforms=result.transforms,
+            artifacts=result.artifacts,
+            diagnostics=diagnostics,
+        )
 
     def _read_metadata(self, path: Path) -> dict[str, Any]:
         return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -120,18 +227,24 @@ class AlignStage:
         aligned_path: Path | None,
         align_result: AlignResult,
         aligned: bool,
+        algorithm_name: str,
+        metadata_status: str,
+        fallback_used: bool,
     ) -> None:
         status = metadata.setdefault("status", {})
         status["aligned"] = aligned
         output = {"lr_aligned": str(aligned_path)} if aligned_path is not None else {}
+        diagnostics = dict(align_result.diagnostics)
+        if fallback_used:
+            diagnostics["fallback_used"] = True
         metadata["align"] = {
-            "algorithm": self.algorithm_name,
-            "status": align_result.status,
+            "algorithm": algorithm_name,
+            "status": metadata_status,
             "confidence": float(align_result.confidence),
             "message": align_result.message,
             "output": output,
             "transforms": align_result.transforms,
             "artifacts": align_result.artifacts,
-            "diagnostics": align_result.diagnostics,
+            "diagnostics": diagnostics,
         }
         write_yaml(meta_path, metadata)

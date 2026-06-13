@@ -90,3 +90,54 @@ def test_ecc_alignment_returns_failed_for_unalignable_images(tmp_path: Path):
     assert result.aligned_lr_rgb is None
     assert result.confidence == 0.0
     assert result.message
+
+
+def test_phase_correlation_handles_mixed_lr_hr_sizes(tmp_path: Path):
+    registry = build_alignment_registry()
+    aligner = registry.create("phase_correlation_translation", {"resize_short_side": 64})
+    hr = make_feature_image(96)
+    lr = cv2.resize(hr, (48, 48), interpolation=cv2.INTER_AREA)
+
+    result = aligner.align(lr, hr, make_context(tmp_path))
+
+    assert result.status == "success"
+    assert result.aligned_lr_rgb is not None
+    assert result.aligned_lr_rgb.shape == hr.shape
+    assert "pre_alignment_error" in result.diagnostics
+    assert "post_alignment_error" in result.diagnostics
+
+
+def test_ecc_alignment_reports_quality_metrics_for_mixed_sizes(tmp_path: Path):
+    registry = build_alignment_registry()
+    aligner = registry.create("ecc_alignment", {"motion_model": "translation"})
+    hr = make_feature_image(96)
+    lr = cv2.resize(hr, (48, 48), interpolation=cv2.INTER_AREA)
+
+    result = aligner.align(lr, hr, make_context(tmp_path))
+
+    assert result.status == "success"
+    assert result.aligned_lr_rgb is not None
+    assert result.aligned_lr_rgb.shape == hr.shape
+    assert "pre_alignment_error" in result.diagnostics
+    assert "post_alignment_error" in result.diagnostics
+
+
+def test_coarse_to_flow_registry_falls_back_to_coarse_result(tmp_path: Path):
+    registry = build_alignment_registry()
+    aligner = registry.create(
+        "coarse_to_flow",
+        {
+            "coarse_algorithm": "phase_correlation_translation",
+            "optical_flow": {"enabled": False, "algorithm": "dis"},
+        },
+    )
+    hr = make_feature_image()
+    lr = shift_image(hr, dx=3, dy=2)
+
+    result = aligner.align(lr, hr, make_context(tmp_path))
+
+    assert result.status == "success"
+    assert result.aligned_lr_rgb is not None
+    assert result.diagnostics["algorithm"] == "coarse_to_flow"
+    assert result.diagnostics["coarse_algorithm"] == "phase_correlation_translation"
+    assert result.diagnostics["flow_used"] is False
