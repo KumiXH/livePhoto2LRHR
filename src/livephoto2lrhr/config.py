@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +54,47 @@ class FrameSelectConfig:
 
 
 @dataclass(frozen=True)
+class AlignArtifactsConfig:
+    save_debug_overlay: bool = False
+    save_flow: bool = False
+    save_masks: bool = False
+
+
+@dataclass(frozen=True)
+class PhaseCorrelationConfig:
+    resize_short_side: int = 512
+
+
+@dataclass(frozen=True)
+class ECCConfig:
+    motion_model: str = "affine"
+    number_of_iterations: int = 100
+    termination_eps: float = 1.0e-5
+    gaussian_filter_size: int = 5
+
+
+@dataclass(frozen=True)
+class OpticalFlowConfig:
+    enabled: bool = False
+    algorithm: str = "dis"
+
+
+@dataclass(frozen=True)
+class AlignConfig:
+    enabled: bool = False
+    algorithm: str = "identity_alignment"
+    device: str = "auto"
+    output_folder: str = "LR_aligned"
+    confidence_threshold: float = 0.3
+    fallback_algorithm: str = "identity_alignment"
+    on_failure: str = "keep_original"
+    artifacts: AlignArtifactsConfig = AlignArtifactsConfig()
+    phase_correlation: PhaseCorrelationConfig = PhaseCorrelationConfig()
+    ecc: ECCConfig = ECCConfig()
+    optical_flow: OpticalFlowConfig = OpticalFlowConfig()
+
+
+@dataclass(frozen=True)
 class OutputConfig:
     save_metadata: bool = True
     overwrite: bool = False
@@ -66,6 +107,7 @@ class AppConfig:
     frame_select: FrameSelectConfig
     output: OutputConfig
     raw: dict[str, Any]
+    align: AlignConfig = field(default_factory=AlignConfig)
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -108,6 +150,38 @@ def load_config(path: str | Path) -> AppConfig:
         resize_short_side=int(frame_raw.get("resize_short_side", 518)),
         score_fusion=frame_raw.get("score_fusion"),
     )
+    align_raw: dict[str, Any] = raw.get("align", {})
+    align_artifacts_raw: dict[str, Any] = align_raw.get("artifacts", {})
+    phase_raw: dict[str, Any] = align_raw.get("phase_correlation", {})
+    ecc_raw: dict[str, Any] = align_raw.get("ecc", {})
+    optical_flow_raw: dict[str, Any] = align_raw.get("optical_flow", {})
+    align_config = AlignConfig(
+        enabled=bool(align_raw.get("enabled", False)),
+        algorithm=str(align_raw.get("algorithm", "identity_alignment")),
+        device=str(align_raw.get("device", "auto")),
+        output_folder=str(align_raw.get("output_folder", "LR_aligned")),
+        confidence_threshold=float(align_raw.get("confidence_threshold", 0.3)),
+        fallback_algorithm=str(align_raw.get("fallback_algorithm", "identity_alignment")),
+        on_failure=str(align_raw.get("on_failure", "keep_original")),
+        artifacts=AlignArtifactsConfig(
+            save_debug_overlay=bool(align_artifacts_raw.get("save_debug_overlay", False)),
+            save_flow=bool(align_artifacts_raw.get("save_flow", False)),
+            save_masks=bool(align_artifacts_raw.get("save_masks", False)),
+        ),
+        phase_correlation=PhaseCorrelationConfig(
+            resize_short_side=int(phase_raw.get("resize_short_side", 512)),
+        ),
+        ecc=ECCConfig(
+            motion_model=str(ecc_raw.get("motion_model", "affine")),
+            number_of_iterations=int(ecc_raw.get("number_of_iterations", 100)),
+            termination_eps=float(ecc_raw.get("termination_eps", 1.0e-5)),
+            gaussian_filter_size=int(ecc_raw.get("gaussian_filter_size", 5)),
+        ),
+        optical_flow=OpticalFlowConfig(
+            enabled=bool(optical_flow_raw.get("enabled", False)),
+            algorithm=str(optical_flow_raw.get("algorithm", "dis")),
+        ),
+    )
     output_raw = raw.get("output", {})
     output_config = OutputConfig(
         save_metadata=bool(output_raw.get("save_metadata", True)),
@@ -118,6 +192,7 @@ def load_config(path: str | Path) -> AppConfig:
         data=data_config,
         pipeline=pipeline_config,
         frame_select=frame_select_config,
+        align=align_config,
         output=output_config,
         raw=raw,
     )
