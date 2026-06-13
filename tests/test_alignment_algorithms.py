@@ -51,3 +51,42 @@ def test_phase_correlation_translation_improves_shifted_lr(tmp_path: Path):
     assert result.transforms[0]["type"] == "translation"
     assert result.transforms[0]["coordinate_system"] == "lr_to_hr"
     assert result.diagnostics["algorithm"] == "phase_correlation_translation"
+
+
+def test_ecc_alignment_improves_shifted_lr(tmp_path: Path):
+    registry = build_alignment_registry()
+    aligner = registry.create(
+        "ecc_alignment",
+        {
+            "motion_model": "translation",
+            "number_of_iterations": 100,
+            "termination_eps": 1.0e-6,
+            "gaussian_filter_size": 3,
+        },
+    )
+    hr = make_feature_image()
+    lr = shift_image(hr, dx=4, dy=3)
+
+    result = aligner.align(lr, hr, make_context(tmp_path))
+
+    assert result.status == "success"
+    assert result.confidence > 0.0
+    assert result.aligned_lr_rgb is not None
+    assert mse(result.aligned_lr_rgb, hr) < mse(lr, hr)
+    assert result.transforms[0]["type"] == "ecc_translation"
+    assert result.transforms[0]["coordinate_system"] == "lr_to_hr"
+    assert result.diagnostics["algorithm"] == "ecc_alignment"
+
+
+def test_ecc_alignment_returns_failed_for_unalignable_images(tmp_path: Path):
+    registry = build_alignment_registry()
+    aligner = registry.create("ecc_alignment", {"motion_model": "translation"})
+    lr = np.zeros((32, 32, 3), dtype=np.uint8)
+    hr = np.zeros((32, 32, 3), dtype=np.uint8)
+
+    result = aligner.align(lr, hr, make_context(tmp_path))
+
+    assert result.status == "failed"
+    assert result.aligned_lr_rgb is None
+    assert result.confidence == 0.0
+    assert result.message
