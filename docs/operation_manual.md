@@ -15,7 +15,49 @@ image + mp4
 
 Original `LR` and `HR` outputs are never overwritten by later stages. Each later stage writes its own folder, so failed experiments can be discarded safely.
 
-## 1. Environment
+## 1. Stage Summary
+
+| Stage | Goal | Current models / methods | Recommended default | Current recommendation |
+| --- | --- | --- | --- | --- |
+| Phase 1: Frame Selection | Pick the MP4 frame that best matches the still image | `dinov2_similarity`, `opencv_similarity` | `dinov2_similarity` | Use DINOv2 for real dataset generation. Use OpenCV only for CPU-only smoke tests or quick validation. |
+| Phase 2: Alignment | Align LR geometry to HR geometry | `identity_alignment`, `phase_correlation_translation`, `ecc_alignment`, `coarse_to_flow` | `coarse_to_flow` with `phase_correlation_translation` + DIS flow | This is the current strongest baseline. Keep `identity_alignment` as a safe fallback and debugging baseline. |
+| Phase 3: Color Matching | Reduce brightness/color gap between LR and HR | `identity_color_match`, `mean_std_lab` | `mean_std_lab` for experiments | Keep color matching optional for now. Do not assume it should be the final exported LR source until stronger quality gates are in place. |
+
+### 1.1 Phase 1 Details
+
+- `dinov2_similarity`
+  Uses DINOv2 feature similarity as the main matching signal and is the preferred production baseline.
+- `opencv_similarity`
+  Uses a lighter OpenCV-based similarity baseline and is mainly useful for fast CPU smoke runs.
+
+### 1.2 Phase 2 Details
+
+- `identity_alignment`
+  No geometric change; useful for stage validation, fallback, and debugging.
+- `phase_correlation_translation`
+  Estimates a global x/y translation.
+- `ecc_alignment`
+  Uses OpenCV ECC optimization for translation/euclidean/affine/homography-style registration.
+- `coarse_to_flow`
+  Runs a coarse aligner first, then applies dense flow refinement only when measured error improves.
+
+### 1.3 Phase 3 Details
+
+- `identity_color_match`
+  No color change; useful as a no-op baseline.
+- `mean_std_lab`
+  Matches mean/std statistics in LAB color space. It can improve some samples and worsen others, so it should still be treated as an experiment-oriented baseline.
+
+### 1.4 Advanced Direction
+
+- Higher-quality export gates
+  Add `SSIM`, `PSNR`, crop/border artifact checks, dimension checks, and flow outlier checks.
+- Stronger alignment backends
+  Add `LoFTR`, `LightGlue`, `RAFT`, `GMFlow`, `SAM`-style masks, or fusion-style controllers.
+- Stronger color backends
+  Add histogram matching, masked color transfer, LUT fitting, Retinex-style correction, or lightweight neural color models.
+
+## 2. Environment
 
 Use Python 3.10 or newer.
 
@@ -39,7 +81,7 @@ python -m pytest -q
 
 On Linux, create the environment in the repo root and run the same commands. If you use CUDA, install a PyTorch build matching your CUDA driver before installing this project.
 
-## 2. Input Layout
+## 3. Input Layout
 
 Put still images and videos in one input directory. A pair is matched by the same relative stem:
 
@@ -64,7 +106,7 @@ output/
 
 Nested input folders are preserved. For example `input/trip_a/IMG_0001.jpg` becomes `output/HR/trip_a/IMG_0001.png`.
 
-## 3. Configuration
+## 4. Configuration
 
 Start from:
 
@@ -96,7 +138,7 @@ output_dir: /data/livephoto/output
 
 Avoid committing machine-specific paths unless the config is explicitly a smoke-test file.
 
-## 4. Recommended First Run
+## 5. Recommended First Run
 
 For a new dataset, run the full baseline pipeline:
 
@@ -122,7 +164,7 @@ pipeline:
 
 It also generates a report and exports accepted samples when `report.enabled: true` and `export.enabled: true`.
 
-## 5. Phase 1: Frame Selection
+## 6. Phase 1: Frame Selection
 
 Phase 1 reads each MP4 and chooses one LR frame that best matches the still image.
 
@@ -158,7 +200,7 @@ frame_select:
 
 Use this only for fast validation. For real dataset generation, prefer `dinov2_similarity`.
 
-## 6. Phase 2: Alignment
+## 7. Phase 2: Alignment
 
 Phase 2 aligns selected LR to HR geometry.
 
@@ -200,7 +242,7 @@ coarse_to_flow
 
 `coarse_to_flow` first runs a coarse aligner, then accepts dense flow only when it improves measured error. If the flow result is worse, the coarse result is kept.
 
-## 7. Phase 3: Color Matching
+## 8. Phase 3: Color Matching
 
 Phase 3 is optional. It is useful for experiments but is not recommended as the default final LR source yet.
 
@@ -228,7 +270,7 @@ mean_std_lab
 
 The baseline `mean_std_lab` can improve brightness/color in some samples and worsen others. Keep it as an experiment until quality gates are stronger.
 
-## 8. Quality Report
+## 9. Quality Report
 
 Enable:
 
@@ -269,7 +311,7 @@ hr_path
 
 The report is intentionally plain CSV so you can build your own viewer, dashboard, or manual review tool around it.
 
-## 9. Final Dataset Export
+## 10. Final Dataset Export
 
 Export reads a quality report and copies accepted samples into a final training dataset:
 
@@ -318,7 +360,7 @@ max_source_to_hr_mae: 30.0
 
 Tune `max_source_to_hr_mae` after inspecting your dataset distribution. A lower threshold is cleaner but rejects more samples.
 
-## 10. Running Stages Separately
+## 11. Running Stages Separately
 
 You can run stages in separate passes.
 
@@ -353,7 +395,7 @@ export:
 
 This is useful when tuning export thresholds. You do not need to rerun DINOv2 or optical flow just to change final dataset filtering.
 
-## 11. Linux Notes
+## 12. Linux Notes
 
 Use forward-slash absolute paths in YAML.
 
@@ -383,7 +425,7 @@ frame_select:
   device: cuda
 ```
 
-## 12. Common Problems
+## 13. Common Problems
 
 No pairs found:
 
@@ -416,7 +458,7 @@ Chinese or non-ASCII paths look corrupted in terminal:
 Prefer UTF-8 terminals and forward-slash YAML paths. The pipeline uses Python pathlib and supports Unicode paths, but terminal display can still be misconfigured.
 ```
 
-## 13. Current Baseline Status
+## 14. Current Baseline Status
 
 The current project is a usable baseline:
 
@@ -430,7 +472,7 @@ Export: quality-gated final LR/HR dataset
 
 The baseline is designed to be replaceable. Algorithms live behind registries, and pipeline behavior is YAML-driven.
 
-## 14. Advanced Quality Gates
+## 15. Advanced Quality Gates
 
 The current export gate supports:
 
@@ -471,7 +513,7 @@ configs/*.yaml
 
 Keep all gates optional. Different photo sets will need different thresholds.
 
-## 15. Advanced Alignment Roadmap
+## 16. Advanced Alignment Roadmap
 
 The current alignment baselines are useful but not final.
 
@@ -504,7 +546,7 @@ diagnostics
 
 Do not special-case advanced models in the runner. Add them to the alignment registry and configure them by YAML.
 
-## 16. Advanced Color Roadmap
+## 17. Advanced Color Roadmap
 
 The current `mean_std_lab` matcher is a baseline only.
 
@@ -521,7 +563,7 @@ exposure/white-balance regression
 
 Color matching should stay optional until quality gates prove it improves final training data.
 
-## 17. Recommended Production Checklist
+## 18. Recommended Production Checklist
 
 Before treating a generated dataset as training-ready:
 
