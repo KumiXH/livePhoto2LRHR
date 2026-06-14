@@ -55,10 +55,13 @@ class ColorMatchStage:
         self.device = device
 
     def run(self, pair: SamplePair) -> ColorMatchStageResult:
-        lr_path = self._input_lr_path(pair)
         hr_path = output_image_path(self.output_dir, "HR", pair.relative_stem, self.output_ext)
         meta_path = metadata_path(self.output_dir, pair.relative_stem)
         matched_path = output_image_path(self.output_dir, self.output_folder, pair.relative_stem, self.output_ext)
+        metadata: dict[str, Any] = {}
+        if meta_path.exists():
+            metadata = self._read_metadata(meta_path)
+        lr_path = self._input_lr_path(pair, metadata)
 
         if lr_path is None or not hr_path.exists() or (self.save_metadata and not meta_path.exists()):
             return ColorMatchStageResult(
@@ -69,13 +72,10 @@ class ColorMatchStage:
         if not self.overwrite and matched_path.exists():
             return ColorMatchStageResult(sample_id=pair.sample_id, status="color_match_skipped_existing")
 
-        metadata: dict[str, Any] = {}
         lr_rgb = None
         try:
             lr_rgb = read_rgb_array(lr_path)
             hr_rgb = read_rgb_array(hr_path)
-            if self.save_metadata and meta_path.exists():
-                metadata = self._read_metadata(meta_path)
             context = ColorMatchContext(
                 sample_id=pair.sample_id,
                 lr_path=lr_path,
@@ -129,8 +129,11 @@ class ColorMatchStage:
 
         return ColorMatchStageResult(sample_id=pair.sample_id, status=final_status, message=match_result.message)
 
-    def _input_lr_path(self, pair: SamplePair) -> Path | None:
+    def _input_lr_path(self, pair: SamplePair, metadata: dict[str, Any]) -> Path | None:
         if self.input_folder == "auto":
+            aligned_from_metadata = self._metadata_aligned_path(metadata)
+            if aligned_from_metadata is not None and aligned_from_metadata.exists():
+                return aligned_from_metadata
             aligned_path = output_image_path(self.output_dir, "LR_aligned", pair.relative_stem, self.output_ext)
             if aligned_path.exists():
                 return aligned_path
@@ -138,6 +141,15 @@ class ColorMatchStage:
             return lr_path if lr_path.exists() else None
         lr_path = output_image_path(self.output_dir, self.input_folder, pair.relative_stem, self.output_ext)
         return lr_path if lr_path.exists() else None
+
+    def _metadata_aligned_path(self, metadata: dict[str, Any]) -> Path | None:
+        output = metadata.get("align", {}).get("output", {})
+        aligned = output.get("lr_aligned")
+        if not aligned:
+            aligned = metadata.get("output", {}).get("lr_aligned")
+        if not aligned:
+            return None
+        return Path(str(aligned))
 
     def _read_metadata(self, path: Path) -> dict[str, Any]:
         return yaml.safe_load(path.read_text(encoding="utf-8")) or {}

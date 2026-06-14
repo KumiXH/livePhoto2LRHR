@@ -211,7 +211,9 @@ def test_run_pipeline_exports_final_dataset_when_enabled(tmp_path: Path, tiny_pa
             enabled=True,
             input_report="reports/quality_report.csv",
             output_folder="final",
-            lr_source="aligned",
+            final_lr_source="raw",
+            gate_lr_source="aligned",
+            final_lr_resize_mode="copy",
             require_align_status="success",
         ),
     )

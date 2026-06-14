@@ -159,7 +159,9 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
             config=ExportDatasetConfig(
                 input_report=config.export.input_report,
                 output_folder=config.export.output_folder,
-                lr_source=config.export.lr_source,
+                final_lr_source=config.export.final_lr_source,
+                gate_lr_source=config.export.gate_lr_source,
+                final_lr_resize_mode=config.export.final_lr_resize_mode,
                 min_align_confidence=config.export.min_align_confidence,
                 require_align_status=config.export.require_align_status,
                 require_flow_status=config.export.require_flow_status,

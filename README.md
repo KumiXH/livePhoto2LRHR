@@ -119,15 +119,22 @@ identity_color_match
 mean_std_lab
 ```
 
-当前最终导出（final export）支持的质量门槛包括：
+当前最终导出（final export）支持“训练用 LR 来源”和“质量筛选来源”分离，质量门槛包括：
 
 ```text
 align_status
 flow_status
 align_confidence
-source-to-HR MAE
+gate source-to-HR MAE
 file existence
 overwrite safety
+```
+
+如果你希望最终训练集里的 `LR` 既继承对齐/调色结果，又保持原始低清尺寸，现在也支持：
+
+```text
+final_lr_source = aligned / color_matched
+final_lr_resize_mode = match_raw
 ```
 
 ## 文档入口

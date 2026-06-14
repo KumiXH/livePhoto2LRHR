@@ -61,6 +61,30 @@ def write_color_inputs(output_dir: Path, relative_stem: Path) -> tuple[Path, Pat
     return lr_path, aligned_path, hr_path, meta_path
 
 
+def write_color_inputs_with_custom_aligned_folder(
+    output_dir: Path,
+    relative_stem: Path,
+    *,
+    aligned_folder: str,
+) -> tuple[Path, Path, Path, Path]:
+    lr_path = output_image_path(output_dir, "LR", relative_stem, ".png")
+    aligned_path = output_image_path(output_dir, aligned_folder, relative_stem, ".png")
+    hr_path = output_image_path(output_dir, "HR", relative_stem, ".png")
+    meta_path = metadata_path(output_dir, relative_stem)
+    save_rgb_array(np.full((4, 5, 3), 10, dtype=np.uint8), lr_path)
+    save_rgb_array(np.full((4, 5, 3), 177, dtype=np.uint8), aligned_path)
+    save_rgb_array(np.full((8, 10, 3), 200, dtype=np.uint8), hr_path)
+    write_yaml(
+        meta_path,
+        {
+            "sample_id": relative_stem.as_posix(),
+            "output": {"lr": str(lr_path), "lr_aligned": str(aligned_path), "hr": str(hr_path)},
+            "status": {"aligned": True, "color_matched": False},
+        },
+    )
+    return lr_path, aligned_path, hr_path, meta_path
+
+
 def test_color_match_stage_prefers_aligned_lr_and_updates_metadata(tmp_path: Path):
     output_dir = tmp_path / "output"
     relative_stem = Path("nested") / "sample"
@@ -121,6 +145,39 @@ def test_color_match_stage_falls_back_to_lr_when_aligned_missing(tmp_path: Path)
     assert result.status == "color_match_success"
     assert output_path.exists()
     assert Image.open(output_path).getpixel((0, 0)) == (11, 11, 11)
+
+
+def test_color_match_stage_auto_uses_metadata_aligned_output_path(tmp_path: Path):
+    output_dir = tmp_path / "output"
+    relative_stem = Path("sample")
+    _, aligned_path, _, meta_path = write_color_inputs_with_custom_aligned_folder(
+        output_dir,
+        relative_stem,
+        aligned_folder="LR_aligned_flow",
+    )
+    pair = SamplePair("sample", tmp_path / "source.jpg", tmp_path / "source.mp4", relative_stem)
+    stage = ColorMatchStage(
+        output_dir=output_dir,
+        output_ext=".png",
+        input_folder="auto",
+        output_folder="LR_color_matched",
+        overwrite=False,
+        save_metadata=True,
+        matcher=ContextEchoColorMatcher(),
+        algorithm_name="context_echo",
+        algorithm_config={},
+        on_failure="keep_original",
+        device="cpu",
+    )
+
+    result = stage.run(pair)
+
+    output_path = output_dir / "LR_color_matched" / "sample.png"
+    metadata = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
+    assert result.status == "color_match_success"
+    assert output_path.exists()
+    assert Image.open(output_path).getpixel((0, 0)) == (123, 123, 123)
+    assert metadata["color_match"]["input"]["lr"] == str(aligned_path)
 
 
 def test_color_match_stage_skip_on_failure_does_not_write_output(tmp_path: Path):

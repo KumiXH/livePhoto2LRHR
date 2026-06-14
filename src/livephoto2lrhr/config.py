@@ -8,6 +8,7 @@ import yaml
 
 VALID_STAGES = {"frame_select", "align", "color_match"}
 VALID_EXPORT_LR_SOURCES = {"raw", "aligned", "color_matched"}
+VALID_EXPORT_LR_RESIZE_MODES = {"copy", "match_raw"}
 
 
 def _normalize_ext(ext: str) -> str:
@@ -200,7 +201,9 @@ class ExportConfig:
     enabled: bool = False
     input_report: str = "reports/quality_report.csv"
     output_folder: str = "final"
-    lr_source: str = "aligned"
+    final_lr_source: str = "raw"
+    gate_lr_source: str = "aligned"
+    final_lr_resize_mode: str = "copy"
     min_align_confidence: float = 0.0
     require_align_status: str | None = "success"
     require_flow_status: str | None = None
@@ -339,9 +342,17 @@ def load_config(path: str | Path) -> AppConfig:
         thumbnail_size=int(report_raw.get("thumbnail_size", 160)),
     )
     export_raw: dict[str, Any] = raw.get("export", {})
-    export_lr_source = str(export_raw.get("lr_source", "aligned"))
-    if export_lr_source not in VALID_EXPORT_LR_SOURCES:
-        raise ValueError(f"export.lr_source must be one of: {sorted(VALID_EXPORT_LR_SOURCES)}")
+    final_lr_source = str(export_raw.get("final_lr_source", export_raw.get("lr_source", "raw")))
+    if final_lr_source not in VALID_EXPORT_LR_SOURCES:
+        raise ValueError(f"export.final_lr_source must be one of: {sorted(VALID_EXPORT_LR_SOURCES)}")
+    gate_lr_source = str(export_raw.get("gate_lr_source", export_raw.get("lr_source", "aligned")))
+    if gate_lr_source not in VALID_EXPORT_LR_SOURCES:
+        raise ValueError(f"export.gate_lr_source must be one of: {sorted(VALID_EXPORT_LR_SOURCES)}")
+    final_lr_resize_mode = str(export_raw.get("final_lr_resize_mode", "copy"))
+    if final_lr_resize_mode not in VALID_EXPORT_LR_RESIZE_MODES:
+        raise ValueError(
+            f"export.final_lr_resize_mode must be one of: {sorted(VALID_EXPORT_LR_RESIZE_MODES)}"
+        )
     max_source_to_hr_mae_raw = export_raw.get("max_source_to_hr_mae")
     max_source_to_hr_mae = (
         None if max_source_to_hr_mae_raw is None else float(max_source_to_hr_mae_raw)
@@ -360,7 +371,9 @@ def load_config(path: str | Path) -> AppConfig:
             str(export_raw.get("output_folder", "final")),
             config_key="export.output_folder",
         ),
-        lr_source=export_lr_source,
+        final_lr_source=final_lr_source,
+        gate_lr_source=gate_lr_source,
+        final_lr_resize_mode=final_lr_resize_mode,
         min_align_confidence=float(export_raw.get("min_align_confidence", 0.0)),
         require_align_status=require_align_status,
         require_flow_status=require_flow_status,

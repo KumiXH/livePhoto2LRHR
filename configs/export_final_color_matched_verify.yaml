@@ -1,5 +1,5 @@
 task:
-  name: livephoto_export_final_smoke
+  name: livephoto_export_final_color_matched_verify
   seed: 42
 
 data:
@@ -22,10 +22,10 @@ report:
 export:
   enabled: true
   input_report: reports_flow/quality_report.csv
-  output_folder: final_flow
-  final_lr_source: raw
-  gate_lr_source: aligned
-  final_lr_resize_mode: copy
+  output_folder: final_flow_color_verify
+  final_lr_source: color_matched
+  gate_lr_source: color_matched
+  final_lr_resize_mode: match_raw
   min_align_confidence: 0.3
   require_align_status: success
   require_flow_status: accepted

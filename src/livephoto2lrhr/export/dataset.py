@@ -5,12 +5,16 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from PIL import Image, ImageOps
+
 
 @dataclass(frozen=True)
 class ExportDatasetConfig:
     input_report: str = "reports/quality_report.csv"
     output_folder: str = "final"
-    lr_source: str = "aligned"
+    final_lr_source: str = "raw"
+    gate_lr_source: str = "aligned"
+    final_lr_resize_mode: str = "copy"
     min_align_confidence: float = 0.0
     require_align_status: str | None = "success"
     require_flow_status: str | None = None
@@ -30,8 +34,12 @@ MANIFEST_FIELDS = [
     "accepted",
     "reason",
     "lr_source",
-    "source_to_hr_mae",
-    "source_lr_path",
+    "gate_lr_source",
+    "final_lr_resize_mode",
+    "gate_source_to_hr_mae",
+    "final_source_lr_path",
+    "gate_source_lr_path",
+    "raw_lr_path",
     "hr_path",
     "final_lr_path",
     "final_hr_path",
@@ -69,10 +77,12 @@ def export_dataset(output_dir: Path, config: ExportDatasetConfig) -> ExportDatas
         if manifest_row["accepted"] != "true":
             continue
         _copy_pair(
-            source_lr=Path(manifest_row["source_lr_path"]),
+            raw_lr=_path_or_none(manifest_row["raw_lr_path"]),
+            source_lr=Path(manifest_row["final_source_lr_path"]),
             source_hr=Path(manifest_row["hr_path"]),
             final_lr=Path(manifest_row["final_lr_path"]),
             final_hr=Path(manifest_row["final_hr_path"]),
+            resize_mode=manifest_row["final_lr_resize_mode"],
             overwrite=config.overwrite,
         )
 
@@ -95,16 +105,19 @@ def _manifest_row(
     config: ExportDatasetConfig,
 ) -> dict[str, str]:
     sample_id = row.get("sample_id", "").strip()
-    source_lr = _source_lr_path(row, config.lr_source)
-    source_mae = row.get(LR_SOURCE_MAE_FIELDS[config.lr_source], "")
+    raw_lr = _source_lr_path(row, "raw")
+    final_source_lr = _source_lr_path(row, config.final_lr_source)
+    gate_source_lr = _source_lr_path(row, config.gate_lr_source)
+    gate_source_mae = row.get(LR_SOURCE_MAE_FIELDS[config.gate_lr_source], "")
     hr_path = _path_or_none(row.get("hr_path", ""))
-    relative_output = _relative_output_path(source_lr, output_dir, config.lr_source, sample_id)
+    relative_output = _relative_output_path(final_source_lr, output_dir, config.final_lr_source, sample_id)
     final_lr = export_dir / "LR" / relative_output
     final_hr = export_dir / "HR" / relative_output
     reason = _acceptance_reason(
         row=row,
-        source_lr=source_lr,
-        source_mae=source_mae,
+        final_source_lr=final_source_lr,
+        gate_source_lr=gate_source_lr,
+        gate_source_mae=gate_source_mae,
         hr_path=hr_path,
         final_lr=final_lr,
         final_hr=final_hr,
@@ -114,9 +127,13 @@ def _manifest_row(
         "sample_id": sample_id,
         "accepted": "true" if reason == "accepted" else "false",
         "reason": reason,
-        "lr_source": config.lr_source,
-        "source_to_hr_mae": source_mae,
-        "source_lr_path": _path_to_str(source_lr),
+        "lr_source": config.final_lr_source,
+        "gate_lr_source": config.gate_lr_source,
+        "final_lr_resize_mode": config.final_lr_resize_mode,
+        "gate_source_to_hr_mae": gate_source_mae,
+        "final_source_lr_path": _path_to_str(final_source_lr),
+        "gate_source_lr_path": _path_to_str(gate_source_lr),
+        "raw_lr_path": _path_to_str(raw_lr),
         "hr_path": _path_to_str(hr_path),
         "final_lr_path": str(final_lr),
         "final_hr_path": str(final_hr),
@@ -129,8 +146,9 @@ def _manifest_row(
 def _acceptance_reason(
     *,
     row: dict[str, str],
-    source_lr: Path | None,
-    source_mae: str,
+    final_source_lr: Path | None,
+    gate_source_lr: Path | None,
+    gate_source_mae: str,
     hr_path: Path | None,
     final_lr: Path,
     final_hr: Path,
@@ -145,27 +163,46 @@ def _acceptance_reason(
         return "align_confidence_below_min"
     if config.require_flow_status and row.get("flow_status", "") != config.require_flow_status:
         return "flow_status_mismatch"
-    if _is_false(row.get(LR_SOURCE_EXISTS_FIELDS[config.lr_source], "")) or source_lr is None or not source_lr.exists():
-        return "missing_lr_source"
+    if (
+        _is_false(row.get(LR_SOURCE_EXISTS_FIELDS[config.gate_lr_source], ""))
+        or gate_source_lr is None
+        or not gate_source_lr.exists()
+    ):
+        return "missing_gate_lr_source"
+    if (
+        _is_false(row.get(LR_SOURCE_EXISTS_FIELDS[config.final_lr_source], ""))
+        or final_source_lr is None
+        or not final_source_lr.exists()
+    ):
+        return "missing_final_lr_source"
     if _is_false(row.get("hr_exists", "")) or hr_path is None or not hr_path.exists():
         return "missing_hr"
     if config.max_source_to_hr_mae is not None:
-        mae = _float_or_none(source_mae)
+        mae = _float_or_none(gate_source_mae)
         if mae is None:
-            return "source_to_hr_mae_missing"
+            return "gate_source_to_hr_mae_missing"
         if mae > config.max_source_to_hr_mae:
-            return "source_to_hr_mae_above_max"
+            return "gate_source_to_hr_mae_above_max"
     if not config.overwrite and (final_lr.exists() or final_hr.exists()):
         return "destination_exists"
     return "accepted"
 
 
-def _copy_pair(*, source_lr: Path, source_hr: Path, final_lr: Path, final_hr: Path, overwrite: bool) -> None:
+def _copy_pair(
+    *,
+    raw_lr: Path | None,
+    source_lr: Path,
+    source_hr: Path,
+    final_lr: Path,
+    final_hr: Path,
+    resize_mode: str,
+    overwrite: bool,
+) -> None:
     if not overwrite and (final_lr.exists() or final_hr.exists()):
         return
     final_lr.parent.mkdir(parents=True, exist_ok=True)
     final_hr.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_lr, final_lr)
+    _write_final_lr(source_lr=source_lr, raw_lr=raw_lr, destination=final_lr, resize_mode=resize_mode)
     shutil.copy2(source_hr, final_hr)
 
 
@@ -179,6 +216,21 @@ def _write_manifest(path: Path, rows: list[dict[str, str]]) -> None:
 
 def _source_lr_path(row: dict[str, str], lr_source: str) -> Path | None:
     return _path_or_none(row.get(LR_SOURCE_PATH_FIELDS[lr_source], ""))
+
+
+def _write_final_lr(*, source_lr: Path, raw_lr: Path | None, destination: Path, resize_mode: str) -> None:
+    if resize_mode == "copy":
+        shutil.copy2(source_lr, destination)
+        return
+    if resize_mode != "match_raw":
+        raise ValueError(f"unsupported final LR resize mode: {resize_mode}")
+    if raw_lr is None or not raw_lr.exists():
+        raise ValueError("raw LR source is required for final_lr_resize_mode=match_raw")
+    with Image.open(source_lr) as source_image, Image.open(raw_lr) as raw_image:
+        source_rgb = ImageOps.exif_transpose(source_image).convert("RGB")
+        raw_rgb = ImageOps.exif_transpose(raw_image).convert("RGB")
+        resized = source_rgb.resize(raw_rgb.size, Image.Resampling.LANCZOS)
+        resized.save(destination)
 
 
 def _relative_output_path(source_lr: Path | None, output_dir: Path, lr_source: str, sample_id: str) -> Path:

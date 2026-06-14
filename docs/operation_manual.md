@@ -338,12 +338,39 @@ export:
   enabled: true
   input_report: reports_flow/quality_report.csv
   output_folder: final_flow
-  lr_source: aligned
+  final_lr_source: raw
+  gate_lr_source: aligned
+  final_lr_resize_mode: copy
   min_align_confidence: 0.3
   require_align_status: success
   require_flow_status: accepted
   max_source_to_hr_mae: 30.0
 ```
+
+这里有一个非常重要的语义：
+
+- `final_lr_source`
+  决定最终写进训练集 `LR/` 的来源。
+- `gate_lr_source`
+  决定质量门槛评估时使用哪一路图像。
+- `final_lr_resize_mode`
+  决定最终写进训练集 `LR/` 时，是否保持来源图尺寸，或回落到原始 raw LR 尺寸。
+
+对超分训练来说，推荐：
+
+- `final_lr_source: raw`
+  保留 MP4 原始低清退化，不做上采样改写。
+- `gate_lr_source: aligned`
+  使用对齐后的代理图做几何一致性和质量筛样。
+- `final_lr_resize_mode: copy`
+  当 `final_lr_source: raw` 时，直接原样写入即可。
+
+如果你想要“最终 LR 继承对齐/调色结果，但仍然保持原始低清尺寸”，推荐：
+
+- `final_lr_source: aligned` 或 `final_lr_source: color_matched`
+- `final_lr_resize_mode: match_raw`
+
+这会把高分辨率网格上的对齐/调色结果重新采样回 raw LR 的尺寸。
 
 输出：
 
@@ -361,20 +388,41 @@ accepted
 align_status_mismatch
 align_confidence_below_min
 flow_status_mismatch
-missing_lr_source
+missing_gate_lr_source
+missing_final_lr_source
 missing_hr
-source_to_hr_mae_above_max
+gate_source_to_hr_mae_above_max
 destination_exists
 ```
 
 推荐的首次导出策略：
 
 ```yaml
-lr_source: aligned
+final_lr_source: raw
+gate_lr_source: aligned
+final_lr_resize_mode: copy
 require_align_status: success
 require_flow_status: accepted
 max_source_to_hr_mae: 30.0
 ```
+
+这意味着：
+
+- 训练集中的 `LR` 保持原始低分辨率
+- 样本是否通过，则依赖 aligned 结果的质量指标
+
+如果你更看重最终训练时的几何和亮度一致性，可以改成：
+
+```yaml
+final_lr_source: color_matched
+gate_lr_source: color_matched
+final_lr_resize_mode: match_raw
+require_align_status: success
+require_flow_status: accepted
+max_source_to_hr_mae: 30.0
+```
+
+这会导出“内容来自调色/对齐结果，但尺寸回到原始低清 LR”的训练对。
 
 之后可以根据数据分布再逐步调 `max_source_to_hr_mae`。阈值越低，样本越干净，但通过数也会越少。
 
@@ -504,7 +552,7 @@ Export: 质量门槛驱动的最终 LR/HR 导出
 align_status
 flow_status
 align_confidence
-source-to-HR MAE
+gate source-to-HR MAE
 file existence
 destination overwrite safety
 ```

@@ -70,7 +70,9 @@ export:
   enabled: false
   input_report: reports/quality_report.csv
   output_folder: final
-  lr_source: aligned
+  final_lr_source: raw
+  gate_lr_source: aligned
+  final_lr_resize_mode: copy
   min_align_confidence: 0.0
   require_align_status: success
   require_flow_status:
