@@ -1,94 +1,88 @@
-# Training Contract and Quality Gates Design
+# 训练集契约与质量门槛设计
 
-## Goal
+## 目标
 
-Fix the project's final dataset contract so later work does not drift, then define the
-first formal implementation sub-project under the roadmap: stronger quality gates.
+先把项目最终训练集的导出契约彻底固定下来，避免后续工程继续发散；再把四条 roadmap 里的第一个正式实现子项目，也就是“更强的质量门槛（quality gates）”定义清楚。
 
-This design locks down the meaning of exported training pairs:
+这份设计文档要锁定最终训练对的语义：
 
-- `LR` must remain low-resolution in pixel size.
-- `HR` must remain high-resolution in pixel size.
-- `LR` should be geometrically aligned to `HR` as much as possible.
-- `LR` should be brightness and color matched to `HR` as much as possible.
-- `LR` and `HR` must preserve a stable scale relationship so they can be used directly
-  as super-resolution training pairs.
+- `LR` 在像素尺寸上必须保持低清。
+- `HR` 在像素尺寸上必须保持高清。
+- `LR` 在几何内容上应尽量对齐 `HR`。
+- `LR` 在亮度和颜色上应尽量贴近 `HR`。
+- `LR` 和 `HR` 必须保持稳定的等比关系，能够直接作为超分训练对使用。
 
-## Why This Contract Matters
+## 为什么要先固定这个契约
 
-The project already has three processing phases:
+项目现在已经有三阶段处理链路：
 
-1. frame selection
-2. alignment
-3. color matching
+1. 抽帧匹配
+2. 对齐
+3. 调色
 
-Without a fixed export contract, these phases can drift into a different goal:
-producing visually nice intermediate images at the wrong size.
+如果没有一个固定的最终导出契约，后续各阶段就很容易偏向“做出看起来更顺眼的中间图”，而不是“做出真正适合超分训练的数据对”。
 
-The user requirement is stricter than that. The project is not just generating aligned
-previews. It is building a training dataset for super-resolution. That means the final
-export must optimize for training semantics, not for intermediate inspection:
+你现在的目标不是生成可视化预览图，而是生成训练集。因此最终导出时，必须始终服从训练语义，而不是中间阶段语义：
 
-- exported `LR` is the training input
-- exported `HR` is the supervision target
-- the pair must be low-res versus high-res
-- the pair must be spatially corresponding
+- 导出的 `LR` 是训练输入
+- 导出的 `HR` 是监督目标
+- 二者必须是“低清 vs 高清”的关系
+- 二者必须在空间对应关系上足够稳定
 
-## Current Baseline
+## 当前基础
 
-The codebase already supports:
+当前代码已经支持：
 
-- phase 1 frame selection
-- phase 2 alignment
-- phase 3 color matching
-- quality report generation
-- final dataset export
+- 阶段一抽帧匹配
+- 阶段二对齐
+- 阶段三调色
+- 质量报告生成
+- 最终训练集导出
 
-Recent export behavior already moved in the right direction by separating:
+最近的 export 语义也已经向正确方向迈进了一步，把原来的单一路径拆成了：
 
 - `final_lr_source`
 - `gate_lr_source`
 - `final_lr_resize_mode`
 
-This is the key foundation for the new contract because it separates:
+这是非常关键的基础，因为它把三件事分开了：
 
-- which image content is exported
-- which image content is evaluated for gating
-- which size the final exported `LR` should keep
+- 最终导出的 `LR` 内容来自哪一路
+- 质量门槛判定时看哪一路
+- 最终导出的 `LR` 尺寸应该保持什么规则
 
-## Fixed Training Contract
+## 固定下来的训练集契约
 
-The final exported dataset contract is:
+最终导出的训练对契约定义如下：
 
 ```text
-training pair = final LR + final HR
+训练对 = final LR + final HR
 
-final LR:
-  low-resolution pixel size
-  geometrically aligned to HR as much as possible
-  brightness/color matched to HR as much as possible
-  preserves raw LR scale relationship
+final LR：
+  低清像素尺寸
+  在几何上尽量对齐 HR
+  在亮度 / 颜色上尽量贴近 HR
+  保持 raw LR 的低清尺度关系
 
-final HR:
-  high-resolution pixel size
-  remains the photo-derived target
+final HR：
+  高清像素尺寸
+  始终作为照片侧的监督目标
 ```
 
-This means intermediate phase outputs have different roles:
+这意味着三阶段产物的角色必须明确区分：
 
-- `raw LR` is the authoritative low-resolution size reference
-- `aligned LR` is the geometry-corrected intermediate result
-- `color_matched LR` is the color-corrected intermediate result
-- final export decides which content to use, but must still respect raw LR size when
-  the chosen content came from an aligned or color-matched branch
+- `raw LR` 是最终低清尺寸的权威基准
+- `aligned LR` 是几何对齐后的中间结果
+- `color_matched LR` 是亮度 / 颜色修正后的中间结果
+- export 阶段可以决定最终用哪一路内容，但如果使用的是 `aligned` 或 `color_matched` 内容，最终导出的 `LR` 仍然必须尊重 `raw LR` 的低清尺寸
 
-## Export Semantics
+## Export 语义固定
 
-The project should keep the following meaning fixed:
+下面这三个配置项的含义要在工程里固定下来，不能再漂移。
 
 ### `final_lr_source`
 
-Controls which branch provides the final LR image content:
+决定最终导出的 `LR` 内容来自哪一路：
 
 - `raw`
 - `aligned`
@@ -96,33 +90,32 @@ Controls which branch provides the final LR image content:
 
 ### `gate_lr_source`
 
-Controls which branch is used to decide whether a sample passes export quality gates.
+决定质量门槛判定时，主要看哪一路图像。
 
 ### `final_lr_resize_mode`
 
-Controls the output size behavior of exported `LR`.
+决定最终导出的 `LR` 在尺寸上怎么处理：
 
 - `copy`
-  Preserve the chosen `final_lr_source` image size exactly.
+  完全保持 `final_lr_source` 这一路图像当前的尺寸。
 - `match_raw`
-  Resize the chosen `final_lr_source` content back to the original raw LR size.
+  把 `final_lr_source` 这一路的内容重新缩回 `raw LR` 的原始低清尺寸。
 
-## Recommended Export Policy
+## 推荐导出策略
 
-The recommended project policy should now be explicit:
+项目推荐把下面这条策略固定为主线：
 
-1. Use `raw` as the final size anchor.
-2. Allow `aligned` and `color_matched` to improve geometry and photometric consistency.
-3. If final exported content comes from `aligned` or `color_matched`, export it with
-   `final_lr_resize_mode: match_raw`.
+1. `raw` 作为最终低清尺寸锚点。
+2. `aligned` 和 `color_matched` 负责提升几何一致性、亮度一致性和颜色一致性。
+3. 如果最终导出的内容来自 `aligned` 或 `color_matched`，则导出时必须用 `final_lr_resize_mode: match_raw` 回到 `raw LR` 的低清尺寸。
 
-This produces the intended training pair:
+这样得到的训练对才符合你的真实目标：
 
-- content is closer to `HR`
-- exported `LR` remains low-resolution
-- exported `LR` and `HR` maintain a stable scale relationship
+- 内容上更接近 `HR`
+- 最终 `LR` 仍然是低清尺寸
+- `LR` 和 `HR` 之间仍然保持稳定的等比关系
 
-Recommended production-style export examples:
+推荐的生产型导出示例如下：
 
 ```yaml
 export:
@@ -131,8 +124,12 @@ export:
   final_lr_resize_mode: copy
 ```
 
-This keeps the original low-resolution signal in the training input while using the
-aligned branch to decide whether the sample is trustworthy enough.
+这表示：
+
+- 最终训练集里的 `LR` 仍然保留原始低清退化
+- 但样本是否通过质量门槛，主要参考 `aligned` 这一路
+
+另一种导出策略是：
 
 ```yaml
 export:
@@ -141,158 +138,171 @@ export:
   final_lr_resize_mode: match_raw
 ```
 
-This exports content from the most corrected branch, but still restores the final `LR`
-to the original low-resolution size.
+这表示：
 
-## Roadmap Order
+- 最终导出的 `LR` 内容来自调色后的那一路
+- 但尺寸会重新缩回 `raw LR` 的低清尺寸
 
-The four formal roadmap lines should be implemented in this order:
+## 四条正式主线的施工顺序
 
-1. stronger quality gates
-2. stronger engineering layer
-3. stronger alignment backends
-4. stronger color backends
+这四条正式主线建议固定为下面这个顺序：
 
-This order is intentional.
+1. 更强的质量门槛
+2. 更强的工程化层
+3. 更强的对齐后端
+4. 更强的调色后端
 
-### Why Start with Quality Gates
+这个顺序是有明确理由的。
 
-Without reliable evaluation signals, later alignment and color upgrades cannot be
-compared objectively.
+### 为什么先做质量门槛
 
-### Why Engineering Layer Comes Second
+如果没有统一、可靠、可量化的质量尺子，后面无论你接入更强的对齐算法还是更强的调色算法，都没办法客观比较“是不是更好了”。
 
-Once the project starts integrating larger backends such as LoFTR, RAFT, GMFlow, or
-SAM-style models, it will need unified model registration, caching, version control,
-device routing, orchestration, and runtime statistics.
+### 为什么工程化层排第二
 
-### Why Alignment and Color Backends Come After That
+一旦后面开始接入 `LoFTR`、`RAFT`、`GMFlow`、`SAM` 风格模块，项目就一定会遇到这些问题：
 
-Those improvements become safer and cheaper once the project has both:
+- 模型注册
+- 模型下载与缓存
+- 模型版本固定
+- 设备分配
+- 任务编排
+- 断点续跑
+- 运行统计
 
-- a good evaluation ruler
-- a stable execution foundation
+所以在大规模扩展后端前，最好先把这层地基打稳。
 
-## First Sub-Project: Quality Gates
+### 为什么对齐后端和调色后端放在后面
 
-The first formal implementation sub-project is `quality gates`.
+因为等前两项具备以后：
 
-Its purpose is not to change the final dataset contract. Its purpose is to make export
-decisions measurable, configurable, and explainable.
+- 我们有了统一质量标准
+- 我们有了稳定工程底座
 
-## Candidate Approaches
+这时再继续扩算法，返工成本最低，收益最高。
 
-Three reasonable designs exist.
+## 第一个正式子项目：质量门槛
 
-### Approach 1: Single-Branch Metrics Only
+第一批正式实现的子项目，就是 `quality gates`。
 
-Only compute and evaluate metrics for `gate_lr_source`.
+它的目标不是改变最终训练集契约，而是让 export 的“过或不过”变得：
 
-Benefits:
+- 可量化
+- 可配置
+- 可解释
 
-- simplest implementation
-- smallest CSV expansion
-- smallest config surface
+## 几种设计路线
 
-Costs:
+围绕质量门槛，当前有三种合理设计路线。
 
-- poor visibility into raw versus aligned versus color-matched behavior
-- weak support for later algorithm comparison
+### 方案一：只看单一路径
 
-### Approach 2: Record Three Branches, Gate One Branch
+只计算并只判定 `gate_lr_source` 这一条路径的指标。
 
-Compute metrics for `raw`, `aligned`, and `color_matched`, but use only
-`gate_lr_source` to decide pass/fail during export.
+优点：
 
-Benefits:
+- 实现最简单
+- CSV 扩展最少
+- 配置最少
 
-- preserves a simple export decision path
-- gives full visibility into all branches
-- supports later algorithm analysis without redesigning the report format
-- matches the current architecture and user goal well
+缺点：
 
-Costs:
+- 看不到 `raw / aligned / color_matched` 三路之间的差异
+- 对后续算法比较的支持很弱
 
-- larger report schema
-- more metric computation work
+### 方案二：三路都记录，但只判一路
 
-### Approach 3: Full Multi-Branch Gating
+同时计算 `raw`、`aligned`、`color_matched` 三路指标，但 export 阶段先只根据 `gate_lr_source` 这一条路径决定样本通过与否。
 
-Compute metrics for all branches and allow fully configurable joint gating policies.
+优点：
 
-Benefits:
+- export 判定逻辑仍然清晰简单
+- 可以完整观察三路结果
+- 后续做算法分析时不需要重做报告格式
+- 最贴合当前工程状态和你的目标
 
-- strongest flexibility
-- supports sophisticated acceptance rules
+缺点：
 
-Costs:
+- 报告字段会变多
+- 指标计算工作量会增加
 
-- highest config complexity
-- highest testing burden
-- too heavy for the first quality-gates milestone
+### 方案三：三路联合门槛
 
-## Recommendation
+三路都计算，并允许用多路联合规则做最终判定。
 
-Adopt Approach 2 for the first implementation.
+优点：
 
-That means:
+- 灵活性最高
+- 能支持复杂筛样策略
 
-- the report records metrics for `raw`, `aligned`, and `color_matched`
-- export still uses `gate_lr_source` as the primary pass/fail branch
-- config naming and code structure should leave a path open for future multi-branch
-  gating
+缺点：
 
-This is the best balance between immediate value and implementation cost.
+- 配置复杂度最高
+- 测试成本最高
+- 不适合作为第一版质量门槛落地方案
 
-## Quality Gates Scope
+## 推荐方案
 
-The first implementation should add stronger but still practical signals.
+第一版正式实现，推荐采用方案二：
 
-### Reported Metrics
+- 报告同时记录 `raw / aligned / color_matched`
+- export 仍然只用 `gate_lr_source` 作为主判定路径
+- 配置和代码结构预留未来升级到多路联合门槛的空间
 
-For each available branch among `raw`, `aligned`, and `color_matched`, report:
+这是当前“价值 / 复杂度”比最好的方案。
+
+## 质量门槛第一版范围
+
+第一版质量门槛要做得更强，但仍然保持工程上可控、可落地。
+
+### 报告侧新增指标
+
+对于 `raw`、`aligned`、`color_matched` 三路中实际存在的路径，都分别记录：
 
 - `MAE`
 - `PSNR`
 - `SSIM`
-- dimension check result
-- aspect-ratio consistency result
-- border or crop artifact signal
+- 尺寸检查结果
+- 长宽比一致性检查结果
+- 边缘 / 裁剪伪影信号
 
-From alignment diagnostics, also expose flow-related signals when available:
+此外，结合对齐阶段 diagnostics，补充 flow 相关信号：
 
 - `flow_status`
-- mean flow magnitude
-- flow outlier signal or anomaly flag
+- `mean_flow_magnitude`
+- flow 异常值信号或异常标记
 
-The report should continue to be plain CSV plus existing preview outputs.
+报告格式仍然保持：
 
-### Gating Behavior
+- `quality_report.csv`
+- 现有 preview 输出
 
-Export should continue to accept or reject each sample using a clear reason code.
+不引入 HTML compare。
 
-First-pass gating should remain centered on `gate_lr_source`, plus existing alignment
-status checks.
+### Export 侧的判定行为
 
-Examples of gate types:
+export 仍然按照“样本接受 / 拒绝 + 明确 reason”的思路运行。
 
-- alignment status required
-- flow status required
-- minimum alignment confidence
-- maximum branch-to-HR `MAE`
-- minimum branch-to-HR `PSNR`
-- minimum branch-to-HR `SSIM`
-- dimension check required
-- border artifact score must stay below threshold
+第一版门槛判定仍然围绕 `gate_lr_source` 来做，再叠加现有对齐状态门槛。
 
-All new gates should be optional.
+第一批可以支持的门槛类型包括：
 
-## Branch Metric Naming
+- `align_status` 必须满足要求
+- `flow_status` 必须满足要求
+- `align_confidence` 不低于阈值
+- `gate_lr_source -> HR` 的 `MAE` 不高于阈值
+- `gate_lr_source -> HR` 的 `PSNR` 不低于阈值
+- `gate_lr_source -> HR` 的 `SSIM` 不低于阈值
+- 尺寸检查必须通过
+- 边缘 / 裁剪伪影分数不高于阈值
 
-To support future comparability, metric naming should be explicit rather than
-overloaded.
+所有新增门槛都应该保持可选。
 
-Preferred report naming pattern:
+## 三路指标命名建议
+
+为了后续长期可比较，报告里的字段名应当显式区分三路，而不是混写。
+
+推荐命名方式如下：
 
 ```text
 raw_to_hr_mae
@@ -308,14 +318,13 @@ color_matched_to_hr_psnr
 color_matched_to_hr_ssim
 ```
 
-Boolean or categorical checks should follow the same pattern where applicable.
+尺寸检查、比例检查、边缘伪影等字段，也应尽量遵循同样的显式命名方式。
 
-## Configuration Direction
+## 配置方向
 
-The first implementation should preserve the simple top-level export contract while
-opening room for later per-branch thresholds.
+第一版实现时，export 的顶层契约应尽量保持简单，同时为未来的更复杂门槛留出升级空间。
 
-Recommended direction:
+推荐配置方向示例如下：
 
 ```yaml
 export:
@@ -329,90 +338,109 @@ export:
       max_border_artifact: 12.0
 ```
 
-Or, if the existing config style prefers flatter keys, the first pass can stay flatter
-as long as the branch semantics remain explicit.
+当然，第一版也可以继续保持更扁平的配置风格，只要满足下面三点即可：
 
-The important part is not the exact nesting. The important part is:
+- 门槛逻辑必须是 branch-aware 的
+- 三路语义必须明确
+- 所有阈值都必须保持 optional
 
-- gating remains branch-aware
-- branch naming is explicit
-- all thresholds stay optional
+这里最重要的不是 YAML 嵌套层级本身，而是语义不要再混淆。
 
-## Non-Goals for This Sub-Project
+## 这一子项目当前不做的事情
 
-The first quality-gates milestone does not need to implement:
+第一版 `quality gates` 不要求实现下面这些内容：
 
-- HTML compare tooling
-- learned quality models
-- face detectors or semantic masks
-- multi-branch boolean expressions
-- fully advanced flow analysis
-- final decisions based on all branches at once
+- HTML compare 工具
+- 学习型质量模型
+- 人脸或语义区域检测
+- 多路布尔表达式门槛
+- 特别复杂的 flow 深度分析
+- 同时依据三路联合做最终决策
 
-These can come later after the first metric and export-gating baseline is stable.
+这些都可以放到后续增强版本。
 
-## Interface Stability Requirements
+## 对未来扩展的兼容性要求
 
-This design should keep future upgrades cheap.
+这份设计要保证后续升级成本尽量低。
 
-### For Alignment Backends
+### 对对齐后端的兼容
 
-Future backends such as LoFTR, LightGlue, RAFT, GMFlow, SAM-style masked alignment, or
-LLM/fusion routing should plug into the same alignment contract and emit diagnostics
-that quality gates can consume without changing export semantics.
+未来无论接的是：
 
-### For Color Backends
+- `LoFTR`
+- `LightGlue`
+- `RAFT`
+- `GMFlow`
+- `SAM` 风格 masked alignment
+- LLM / fusion controller
 
-Future color methods such as histogram matching, masked transfer, LUT fitting, Retinex,
-or small neural color models should also fit the same reporting and export structure.
+都应继续走同一套对齐契约，并把 diagnostics 暴露给质量门槛系统使用，而不是反过来修改 export 契约。
 
-### For Engineering Layer
+### 对调色后端的兼容
 
-Model registration, cache control, version pinning, device assignment, resumable runs,
-and runtime statistics should enhance the same pipeline rather than redefining the data
-contract.
+未来无论接的是：
 
-## Error Handling
+- histogram matching
+- masked color transfer
+- LUT fitting
+- Retinex
+- 轻量神经网络调色
 
-Quality metrics must fail soft per sample.
+也都应复用同一套报告结构和导出语义。
 
-If a metric cannot be computed:
+### 对工程化层的兼容
 
-- keep the sample row in the report
-- leave the metric empty or record a stable missing value representation
-- let export reject only if a threshold requires that metric
-- emit a clear rejection reason such as `gate_source_to_hr_ssim_missing`
+后续要做的这些工程化增强：
 
-The batch should continue running.
+- 模型注册
+- 模型缓存
+- 版本固定
+- 设备分配
+- 断点续跑
+- 任务编排
+- 运行统计
 
-## Testing Strategy
+都应当是“增强同一条 pipeline”，而不是重定义数据契约。
 
-The first implementation should add tests in this order:
+## 错误处理
 
-1. report-level metric columns and computations
-2. report behavior when aligned or color-matched files are missing
-3. export config validation for new thresholds
-4. export rejection reasons for each new gate
-5. pipeline integration for report plus export with the new gates
+质量指标必须支持逐样本软失败，不能因为某一个指标算不出来就把整个批次跑崩。
 
-Synthetic image fixtures are sufficient for most unit tests. Real-data smoke remains
-useful later for threshold tuning, not for exact metric assertions.
+如果某个指标无法计算，应遵循下面的规则：
 
-## Success Criteria
+- 这条样本仍然保留在报告里
+- 该指标字段留空，或者使用稳定的缺失值表示
+- 只有当某个门槛明确依赖这个指标时，export 才因为这个缺失值拒绝样本
+- 拒绝原因必须可解释，例如：`gate_source_to_hr_ssim_missing`
 
-This sub-project is successful when:
+整个 batch 必须继续执行。
 
-- the final training-pair contract is preserved
-- `LR` remains low-resolution in final export
-- `HR` remains high-resolution in final export
-- the report exposes branch-separated quality metrics
-- export can reject samples using stronger optional thresholds
-- rejection reasons are explicit and machine-readable
-- later alignment and color upgrades can be compared using the same report structure
+## 测试策略
 
-## Open Design Decision Deferred
+第一版实现建议按下面顺序补测试：
 
-The first quality-gates implementation should not yet decide whether future export
-policies may combine multiple branches at once.
+1. 报告层：新增指标字段和计算逻辑
+2. 报告层：当 `aligned` 或 `color_matched` 缺失时的行为
+3. 配置层：新增门槛参数的校验
+4. 导出层：每一种新增门槛对应的拒绝原因
+5. 集成层：report + export 联动流程
 
-The design intentionally keeps that option open, but does not require it now.
+大部分单元测试都可以用合成图像完成。真实数据 smoke 更适合用于后续阈值调优，而不是用来写精确数值断言。
+
+## 成功标准
+
+这个子项目成功的标准是：
+
+- 最终训练集契约没有被破坏
+- 最终导出的 `LR` 仍然是低清尺寸
+- 最终导出的 `HR` 仍然是高清尺寸
+- 质量报告能显式区分三路指标
+- export 可以基于更强的可选门槛拒绝样本
+- 拒绝原因明确、稳定、可机读
+- 后续更强的对齐 / 调色后端可以直接沿用这套报告体系做比较
+
+## 当前先不定的开放点
+
+第一版 `quality gates` 先不要决定未来是否允许“三路联合判定”。
+
+这条能力要在架构上预留，但不要求第一版现在就落地。
