@@ -1,0 +1,55 @@
+task:
+  name: livephoto_align_tier2_feature_match
+  seed: 42
+
+data:
+  input_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_align_four_tiers/input
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_align_four_tiers/output_tier2_feature_match
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - frame_select
+    - align
+
+frame_select:
+  algorithm: dinov2_similarity
+  device: auto
+  sample_fps: 15
+  top_k: 5
+  batch_size: 8
+  resize_short_side: 518
+  score_fusion:
+    feature_weight: 0.7
+    edge_weight: 0.3
+
+align:
+  enabled: true
+  algorithm: feature_match_transform
+  device: cpu
+  output_folder: LR_aligned_tier2
+  confidence_threshold: 0.25
+  fallback_algorithm: phase_correlation_translation
+  on_failure: keep_original
+  feature_match:
+    detector: orb
+    transform_model: affine
+    max_keypoints: 4000
+    ratio_test: 0.6
+    min_matches: 10
+    ransac_reproj_threshold: 3.0
+
+report:
+  enabled: true
+  output_folder: reports_tier2
+  aligned_folder: LR_aligned_tier2
+  color_matched_folder: LR_color_matched
+  max_preview_samples: 12
+  thumbnail_size: 160
+
+output:
+  save_metadata: true
+  overwrite: true

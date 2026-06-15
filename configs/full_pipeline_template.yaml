@@ -17,6 +17,21 @@ pipeline:
   stages:
     - frame_select
     - align
+    # - color_match
+
+runtime:
+  # When true, stages such as align / color_match will retry samples whose last recorded
+  # metadata status is failed, even if an old output file already exists.
+  retry_failed_samples: false
+  parallel:
+    # First production baseline:
+    # frame_select supports worker planning and device assignment summary.
+    # Recommended for multi-GPU servers: set num_workers to the number of GPUs you want to use.
+    num_workers: 1
+    gpu_ids: []
+    # Example for an 8-GPU server:
+    # num_workers: 8
+    # gpu_ids: ["0", "1", "2", "3", "4", "5", "6", "7"]
 
 frame_select:
   # Use dinov2_similarity for best baseline quality, opencv_similarity for CPU-only smoke tests.
@@ -53,6 +68,25 @@ align:
   optical_flow:
     enabled: true
     algorithm: dis
+  feature_match:
+    detector: orb
+    transform_model: homography
+    max_keypoints: 4000
+    ratio_test: 0.6
+    min_matches: 10
+    ransac_reproj_threshold: 3.0
+  mask_aware:
+    motion_model: translation
+    difference_threshold: 18.0
+    min_mask_fraction: 0.02
+    blend_blur_ksize: 9
+    morphology_kernel_size: 5
+  # Optional advanced backend:
+  # algorithm: global_ecc_homography
+  # algorithm: feature_match_transform
+  # algorithm: feature_match_homography
+  # algorithm: hybrid_feature_flow
+  # algorithm: mask_aware_alignment
 
 color_match:
   enabled: false
@@ -65,6 +99,55 @@ color_match:
   mean_std:
     color_space: lab
     eps: 1.0e-6
+  histogram_match:
+    color_space: lab
+    bins: 256
+  retinex:
+    sigma: 15.0
+    eps: 1.0e-3
+  masked_transfer:
+    color_space: lab
+    difference_threshold: 12.0
+    min_mask_fraction: 0.01
+    max_mask_fraction: 0.85
+    morphology_kernel_size: 5
+  adaptive_3d_lut:
+    color_space: rgb
+    grid_size: 9
+    smoothing_sigma: 1.0
+    identity_mix: 0.1
+  low_frequency_joint:
+    color_space: lab
+    sigma: 5.0
+    base_mix: 0.85
+    detail_preservation: 1.0
+    chroma_strength: 0.7
+  learned_retinex:
+    sigma: 15.0
+    eps: 1.0e-3
+    base_mix: 0.65
+  mask_aware_harmonization:
+    color_space: lab
+    difference_threshold: 12.0
+    min_mask_fraction: 0.01
+    max_mask_fraction: 0.85
+    morphology_kernel_size: 5
+    low_frequency_sigma: 5.0
+  diffusion_harmonization:
+    color_space: lab
+    num_steps: 4
+    guidance_strength: 0.6
+    low_frequency_sigma: 4.0
+    lut_identity_mix: 0.15
+  # Optional advanced backend:
+  # algorithm: histogram_match_lab
+  # algorithm: retinex_color_match
+  # algorithm: masked_color_transfer
+  # algorithm: image_adaptive_3d_lut_color_match
+  # algorithm: low_frequency_joint_appearance_match
+  # algorithm: learned_retinex_color_match
+  # algorithm: mask_aware_harmonization_network
+  # algorithm: diffusion_harmonization
 
 report:
   enabled: true
@@ -80,11 +163,25 @@ export:
   output_folder: final_flow
   final_lr_source: raw
   gate_lr_source: aligned
-  final_lr_resize_mode: copy
+  final_lr_resize_mode: 0.5
+  # Supported resize modes:
+  # copy      -> keep final_lr_source current size
+  # raw       -> resize to raw LR size
+  # match_raw -> alias of raw
+  # 1.0       -> keep HR-space size through resample
+  # 0.75      -> export at 75% of HR-space size
+  # 0.5       -> export at 50% of HR-space size
   min_align_confidence: 0.3
   require_align_status: success
   require_flow_status: accepted
   max_source_to_hr_mae: 30.0
+  # Optional stronger quality gates:
+  # min_source_to_hr_psnr: 18.0
+  # min_source_to_hr_ssim: 0.45
+  # require_source_to_hr_dimension_match: true
+  # require_source_to_hr_aspect_ratio_match: true
+  # max_source_to_hr_border_mae: 12.0
+  # max_mean_flow_magnitude: 20.0
 
 output:
   save_metadata: true

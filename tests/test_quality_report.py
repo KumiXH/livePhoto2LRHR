@@ -75,9 +75,17 @@ def test_generate_quality_report_writes_csv_and_contact_sheet(tmp_path: Path):
     assert result.preview_path == output_dir / "reports" / "preview_contact_sheet.jpg"
     assert result.csv_path.exists()
     assert result.preview_path.exists()
+    zh_csv_path = output_dir / "reports" / "quality_report_zh.csv"
+    assert zh_csv_path.exists()
     with result.csv_path.open("r", encoding="utf-8", newline="") as file:
         rows = list(csv.DictReader(file))
+    with zh_csv_path.open("r", encoding="utf-8-sig", newline="") as file:
+        zh_reader = csv.reader(file)
+        zh_header = next(zh_reader)
     assert rows[0]["sample_id"] == "sample"
+    assert "样本ID" in zh_header
+    assert "原始LR到HR_PSNR" in zh_header
+    assert "对齐LR到HR_SSIM" in zh_header
     assert rows[0]["frame_select_score"] == "0.9"
     assert rows[0]["align_status"] == "success"
     assert rows[0]["align_post_error"] == "1.0"
@@ -87,6 +95,12 @@ def test_generate_quality_report_writes_csv_and_contact_sheet(tmp_path: Path):
     assert rows[0]["color_match_status"] == "success"
     assert rows[0]["color_match_post_error"] == "2.0"
     assert float(rows[0]["lr_to_hr_mae"]) > float(rows[0]["color_matched_to_hr_mae"])
+    assert rows[0]["raw_to_hr_mae"] != ""
+    assert rows[0]["raw_to_hr_psnr"] != ""
+    assert rows[0]["raw_to_hr_ssim"] != ""
+    assert rows[0]["aligned_to_hr_dimension_match"] == "false"
+    assert rows[0]["aligned_to_hr_aspect_ratio_match"] == "true"
+    assert rows[0]["color_matched_to_hr_border_mae"] != ""
     preview = Image.open(result.preview_path)
     assert preview.size[0] > 32
     assert preview.size[1] > 32
@@ -109,6 +123,8 @@ def test_generate_quality_report_handles_missing_optional_outputs(tmp_path: Path
     assert rows[0]["aligned_exists"] == "false"
     assert rows[0]["color_matched_exists"] == "false"
     assert rows[0]["aligned_to_hr_mae"] == ""
+    assert rows[0]["aligned_to_hr_psnr"] == ""
+    assert rows[0]["aligned_to_hr_ssim"] == ""
 
 
 def test_generate_quality_report_uses_configured_stage_folders(tmp_path: Path):

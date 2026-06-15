@@ -1,0 +1,74 @@
+﻿task:
+  name: livephoto_demo_color_final
+  seed: 42
+
+data:
+  input_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_demo_color_final/input
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_demo_color_final/output
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - frame_select
+    - align
+    - color_match
+
+frame_select:
+  algorithm: opencv_similarity
+  device: cpu
+  sample_fps: 10
+  top_k: 5
+  batch_size: 8
+  resize_short_side: 518
+
+align:
+  enabled: true
+  algorithm: coarse_to_flow
+  device: cpu
+  output_folder: LR_aligned_flow
+  confidence_threshold: 0.0
+  fallback_algorithm: identity_alignment
+  on_failure: keep_original
+  coarse_algorithm: phase_correlation_translation
+  optical_flow:
+    enabled: true
+    algorithm: dis
+
+color_match:
+  enabled: true
+  algorithm: mean_std_lab
+  device: cpu
+  input_folder: auto
+  output_folder: LR_color_matched
+  confidence_threshold: 0.0
+  on_failure: keep_original
+  mean_std:
+    color_space: lab
+    eps: 1.0e-6
+
+report:
+  enabled: true
+  output_folder: reports_color
+  aligned_folder: LR_aligned_flow
+  color_matched_folder: LR_color_matched
+  max_preview_samples: 4
+  thumbnail_size: 160
+
+export:
+  enabled: true
+  input_report: reports_color/quality_report.csv
+  output_folder: final_color_matched_match_raw
+  final_lr_source: color_matched
+  gate_lr_source: color_matched
+  final_lr_resize_mode: match_raw
+  require_align_status: success
+  max_source_to_hr_mae: 140.0
+  min_source_to_hr_psnr: 4.0
+  require_source_to_hr_aspect_ratio_match: true
+
+output:
+  save_metadata: true
+  overwrite: true

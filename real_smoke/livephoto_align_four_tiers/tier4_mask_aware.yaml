@@ -1,0 +1,57 @@
+task:
+  name: livephoto_align_tier4_mask_aware
+  seed: 42
+
+data:
+  input_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_align_four_tiers/input
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_align_four_tiers/output_tier4_mask_aware
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - frame_select
+    - align
+
+frame_select:
+  algorithm: dinov2_similarity
+  device: auto
+  sample_fps: 15
+  top_k: 5
+  batch_size: 8
+  resize_short_side: 518
+  score_fusion:
+    feature_weight: 0.7
+    edge_weight: 0.3
+
+align:
+  enabled: true
+  algorithm: mask_aware_alignment
+  device: cpu
+  output_folder: LR_aligned_tier4
+  confidence_threshold: 0.25
+  fallback_algorithm: phase_correlation_translation
+  on_failure: keep_original
+  coarse_algorithm: phase_correlation_translation
+  phase_correlation:
+    resize_short_side: 512
+  mask_aware:
+    motion_model: translation
+    difference_threshold: 18.0
+    min_mask_fraction: 0.015
+    blend_blur_ksize: 9
+    morphology_kernel_size: 5
+
+report:
+  enabled: true
+  output_folder: reports_tier4
+  aligned_folder: LR_aligned_tier4
+  color_matched_folder: LR_color_matched
+  max_preview_samples: 12
+  thumbnail_size: 160
+
+output:
+  save_metadata: true
+  overwrite: true

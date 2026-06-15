@@ -54,7 +54,7 @@ class ColorMatchStage:
         self.on_failure = on_failure
         self.device = device
 
-    def run(self, pair: SamplePair) -> ColorMatchStageResult:
+    def run(self, pair: SamplePair, force_retry_failed: bool = False) -> ColorMatchStageResult:
         hr_path = output_image_path(self.output_dir, "HR", pair.relative_stem, self.output_ext)
         meta_path = metadata_path(self.output_dir, pair.relative_stem)
         matched_path = output_image_path(self.output_dir, self.output_folder, pair.relative_stem, self.output_ext)
@@ -69,7 +69,8 @@ class ColorMatchStage:
                 status="color_match_skipped_missing_input",
                 message="missing phase input",
             )
-        if not self.overwrite and matched_path.exists():
+        retry_failed = force_retry_failed and self._should_retry_failed(metadata)
+        if not self.overwrite and matched_path.exists() and not retry_failed:
             return ColorMatchStageResult(sample_id=pair.sample_id, status="color_match_skipped_existing")
 
         lr_rgb = None
@@ -179,4 +180,14 @@ class ColorMatchStage:
             "artifacts": match_result.artifacts,
             "diagnostics": match_result.diagnostics,
         }
+        if matched_path is not None:
+            diagnostics = metadata["color_match"].setdefault("diagnostics", {})
+            if isinstance(diagnostics, dict) and diagnostics.get("replay_reference_required"):
+                diagnostics["replay_reference_path"] = str(matched_path)
         write_yaml(meta_path, metadata)
+
+    def _should_retry_failed(self, metadata: dict[str, Any]) -> bool:
+        color_match = metadata.get("color_match")
+        if not isinstance(color_match, dict):
+            return False
+        return str(color_match.get("status", "")).lower() == "failed"

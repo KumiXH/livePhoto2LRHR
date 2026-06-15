@@ -10,6 +10,7 @@ import yaml
 from PIL import Image, ImageDraw
 
 from livephoto2lrhr.data.io import output_image_path, read_rgb_array
+from livephoto2lrhr.reports.metrics import branch_metrics_to_hr
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class QualityReportConfig:
 class QualityReportResult:
     rows: int
     csv_path: Path
+    csv_zh_path: Path
     preview_path: Path | None
 
 
@@ -53,6 +55,22 @@ CSV_FIELDS = [
     "aligned_exists",
     "color_matched_exists",
     "hr_exists",
+    "raw_to_hr_mae",
+    "raw_to_hr_psnr",
+    "raw_to_hr_ssim",
+    "raw_to_hr_dimension_match",
+    "raw_to_hr_aspect_ratio_match",
+    "raw_to_hr_border_mae",
+    "aligned_to_hr_psnr",
+    "aligned_to_hr_ssim",
+    "aligned_to_hr_dimension_match",
+    "aligned_to_hr_aspect_ratio_match",
+    "aligned_to_hr_border_mae",
+    "color_matched_to_hr_psnr",
+    "color_matched_to_hr_ssim",
+    "color_matched_to_hr_dimension_match",
+    "color_matched_to_hr_aspect_ratio_match",
+    "color_matched_to_hr_border_mae",
     "lr_to_hr_mae",
     "aligned_to_hr_mae",
     "color_matched_to_hr_mae",
@@ -61,6 +79,56 @@ CSV_FIELDS = [
     "color_matched_path",
     "hr_path",
 ]
+
+CSV_HEADER_ZH = {
+    "sample_id": "样本ID",
+    "frame_select_algorithm": "抽帧算法",
+    "frame_index": "帧索引",
+    "timestamp_sec": "时间戳_秒",
+    "frame_select_score": "抽帧分数",
+    "align_algorithm": "对齐算法",
+    "align_status": "对齐状态",
+    "align_confidence": "对齐置信度",
+    "align_pre_error": "对齐前误差",
+    "align_post_error": "对齐后误差",
+    "flow_used": "是否使用光流",
+    "flow_status": "光流状态",
+    "pre_flow_error": "光流前误差",
+    "post_flow_error": "光流后误差",
+    "mean_flow_magnitude": "平均光流幅度",
+    "color_match_algorithm": "调色算法",
+    "color_match_status": "调色状态",
+    "color_match_confidence": "调色置信度",
+    "color_match_pre_error": "调色前误差",
+    "color_match_post_error": "调色后误差",
+    "lr_exists": "原始LR存在",
+    "aligned_exists": "对齐LR存在",
+    "color_matched_exists": "调色LR存在",
+    "hr_exists": "HR存在",
+    "raw_to_hr_mae": "原始LR到HR_MAE",
+    "raw_to_hr_psnr": "原始LR到HR_PSNR",
+    "raw_to_hr_ssim": "原始LR到HR_SSIM",
+    "raw_to_hr_dimension_match": "原始LR到HR_尺寸一致",
+    "raw_to_hr_aspect_ratio_match": "原始LR到HR_比例一致",
+    "raw_to_hr_border_mae": "原始LR到HR_边缘伪影分数",
+    "aligned_to_hr_psnr": "对齐LR到HR_PSNR",
+    "aligned_to_hr_ssim": "对齐LR到HR_SSIM",
+    "aligned_to_hr_dimension_match": "对齐LR到HR_尺寸一致",
+    "aligned_to_hr_aspect_ratio_match": "对齐LR到HR_比例一致",
+    "aligned_to_hr_border_mae": "对齐LR到HR_边缘伪影分数",
+    "color_matched_to_hr_psnr": "调色LR到HR_PSNR",
+    "color_matched_to_hr_ssim": "调色LR到HR_SSIM",
+    "color_matched_to_hr_dimension_match": "调色LR到HR_尺寸一致",
+    "color_matched_to_hr_aspect_ratio_match": "调色LR到HR_比例一致",
+    "color_matched_to_hr_border_mae": "调色LR到HR_边缘伪影分数",
+    "lr_to_hr_mae": "LR到HR_MAE_兼容列",
+    "aligned_to_hr_mae": "对齐LR到HR_MAE",
+    "color_matched_to_hr_mae": "调色LR到HR_MAE",
+    "lr_path": "原始LR路径",
+    "aligned_path": "对齐LR路径",
+    "color_matched_path": "调色LR路径",
+    "hr_path": "HR路径",
+}
 
 
 def generate_quality_report(output_dir: Path, config: QualityReportConfig) -> QualityReportResult:
@@ -72,11 +140,13 @@ def generate_quality_report(output_dir: Path, config: QualityReportConfig) -> Qu
     ]
     csv_path = report_dir / "quality_report.csv"
     _write_csv(csv_path, rows)
+    zh_csv_path = report_dir / "quality_report_zh.csv"
+    _write_csv_zh(zh_csv_path, rows)
     preview_path = None
     if rows and config.max_preview_samples > 0:
         preview_path = report_dir / "preview_contact_sheet.jpg"
         _write_contact_sheet(preview_path, rows[: config.max_preview_samples], config.thumbnail_size)
-    return QualityReportResult(rows=len(rows), csv_path=csv_path, preview_path=preview_path)
+    return QualityReportResult(rows=len(rows), csv_path=csv_path, csv_zh_path=zh_csv_path, preview_path=preview_path)
 
 
 def _row_from_metadata(output_dir: Path, meta_path: Path, *, config: QualityReportConfig) -> dict[str, str]:
@@ -91,6 +161,9 @@ def _row_from_metadata(output_dir: Path, meta_path: Path, *, config: QualityRepo
     color_match = metadata.get("color_match") or {}
     align_diag = align.get("diagnostics") or {}
     color_diag = color_match.get("diagnostics") or {}
+    raw_metrics = _metrics_to_hr(lr_path, hr_path)
+    aligned_metrics = _metrics_to_hr(aligned_path, hr_path)
+    color_matched_metrics = _metrics_to_hr(matched_path, hr_path)
     row = {
         "sample_id": str(metadata.get("sample_id") or relative_stem.as_posix()),
         "frame_select_algorithm": _as_str(_nested(metadata, "frame_select", "algorithm")),
@@ -116,9 +189,25 @@ def _row_from_metadata(output_dir: Path, meta_path: Path, *, config: QualityRepo
         "aligned_exists": _bool_str(aligned_path.exists()),
         "color_matched_exists": _bool_str(matched_path.exists()),
         "hr_exists": _bool_str(hr_path.exists()),
-        "lr_to_hr_mae": _as_str(_mae_to_hr(lr_path, hr_path)),
-        "aligned_to_hr_mae": _as_str(_mae_to_hr(aligned_path, hr_path)),
-        "color_matched_to_hr_mae": _as_str(_mae_to_hr(matched_path, hr_path)),
+        "raw_to_hr_mae": raw_metrics["mae"],
+        "raw_to_hr_psnr": raw_metrics["psnr"],
+        "raw_to_hr_ssim": raw_metrics["ssim"],
+        "raw_to_hr_dimension_match": raw_metrics["dimension_match"],
+        "raw_to_hr_aspect_ratio_match": raw_metrics["aspect_ratio_match"],
+        "raw_to_hr_border_mae": raw_metrics["border_mae"],
+        "aligned_to_hr_mae": aligned_metrics["mae"],
+        "aligned_to_hr_psnr": aligned_metrics["psnr"],
+        "aligned_to_hr_ssim": aligned_metrics["ssim"],
+        "aligned_to_hr_dimension_match": aligned_metrics["dimension_match"],
+        "aligned_to_hr_aspect_ratio_match": aligned_metrics["aspect_ratio_match"],
+        "aligned_to_hr_border_mae": aligned_metrics["border_mae"],
+        "color_matched_to_hr_mae": color_matched_metrics["mae"],
+        "color_matched_to_hr_psnr": color_matched_metrics["psnr"],
+        "color_matched_to_hr_ssim": color_matched_metrics["ssim"],
+        "color_matched_to_hr_dimension_match": color_matched_metrics["dimension_match"],
+        "color_matched_to_hr_aspect_ratio_match": color_matched_metrics["aspect_ratio_match"],
+        "color_matched_to_hr_border_mae": color_matched_metrics["border_mae"],
+        "lr_to_hr_mae": raw_metrics["mae"],
         "lr_path": str(lr_path),
         "aligned_path": str(aligned_path),
         "color_matched_path": str(matched_path),
@@ -132,6 +221,15 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
         writer = csv.DictWriter(file, fieldnames=CSV_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_csv_zh(path: Path, rows: list[dict[str, str]]) -> None:
+    zh_fields = [CSV_HEADER_ZH.get(field, field) for field in CSV_FIELDS]
+    with path.open("w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(zh_fields)
+        for row in rows:
+            writer.writerow([row.get(field, "") for field in CSV_FIELDS])
 
 
 def _write_contact_sheet(path: Path, rows: list[dict[str, str]], thumbnail_size: int) -> None:
@@ -167,16 +265,27 @@ def _thumbnail(path: Path, size: int) -> Image.Image:
     return canvas
 
 
-def _mae_to_hr(candidate_path: Path, hr_path: Path) -> float | None:
+def _metrics_to_hr(candidate_path: Path, hr_path: Path) -> dict[str, str]:
     if not candidate_path.exists() or not hr_path.exists():
-        return None
+        return {
+            "mae": "",
+            "psnr": "",
+            "ssim": "",
+            "dimension_match": "",
+            "aspect_ratio_match": "",
+            "border_mae": "",
+        }
     candidate = read_rgb_array(candidate_path)
     hr = read_rgb_array(hr_path)
-    if candidate.shape[:2] != hr.shape[:2]:
-        with Image.fromarray(hr) as hr_image:
-            resized = hr_image.resize((candidate.shape[1], candidate.shape[0]), Image.Resampling.BICUBIC)
-            hr = np.asarray(resized)
-    return float(np.mean(np.abs(candidate.astype(np.float32) - hr.astype(np.float32))))
+    metrics = branch_metrics_to_hr(candidate, hr)
+    return {
+        "mae": _as_str(metrics.mae),
+        "psnr": _as_str(metrics.psnr),
+        "ssim": _as_str(metrics.ssim),
+        "dimension_match": _bool_str(bool(metrics.dimension_match)),
+        "aspect_ratio_match": _bool_str(bool(metrics.aspect_ratio_match)),
+        "border_mae": _as_str(metrics.border_mae),
+    }
 
 
 def _nested(data: dict[str, Any], *keys: str) -> Any:

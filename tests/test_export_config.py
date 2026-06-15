@@ -35,11 +35,17 @@ def test_export_config_defaults_to_disabled_final_dataset(tmp_path: Path):
     assert config.export.output_folder == "final"
     assert config.export.final_lr_source == "raw"
     assert config.export.gate_lr_source == "aligned"
-    assert config.export.final_lr_resize_mode == "copy"
+    assert config.export.final_lr_resize_mode == "0.5"
     assert config.export.min_align_confidence == 0.0
     assert config.export.require_align_status == "success"
     assert config.export.require_flow_status is None
     assert config.export.max_source_to_hr_mae is None
+    assert config.export.min_source_to_hr_psnr is None
+    assert config.export.min_source_to_hr_ssim is None
+    assert config.export.require_source_to_hr_dimension_match is False
+    assert config.export.require_source_to_hr_aspect_ratio_match is False
+    assert config.export.max_source_to_hr_border_mae is None
+    assert config.export.max_mean_flow_magnitude is None
 
 
 def test_export_config_loads_quality_gate_values(tmp_path: Path):
@@ -59,6 +65,12 @@ def test_export_config_loads_quality_gate_values(tmp_path: Path):
         "require_align_status": "success",
         "require_flow_status": "accepted",
         "max_source_to_hr_mae": 25.0,
+        "min_source_to_hr_psnr": 18.0,
+        "min_source_to_hr_ssim": 0.45,
+        "require_source_to_hr_dimension_match": True,
+        "require_source_to_hr_aspect_ratio_match": True,
+        "max_source_to_hr_border_mae": 12.0,
+        "max_mean_flow_magnitude": 20.0,
     }
     write_yaml(config_path, data)
 
@@ -74,6 +86,12 @@ def test_export_config_loads_quality_gate_values(tmp_path: Path):
     assert config.export.require_align_status == "success"
     assert config.export.require_flow_status == "accepted"
     assert config.export.max_source_to_hr_mae == 25.0
+    assert config.export.min_source_to_hr_psnr == 18.0
+    assert config.export.min_source_to_hr_ssim == 0.45
+    assert config.export.require_source_to_hr_dimension_match is True
+    assert config.export.require_source_to_hr_aspect_ratio_match is True
+    assert config.export.max_source_to_hr_border_mae == 12.0
+    assert config.export.max_mean_flow_magnitude == 20.0
 
 
 @pytest.mark.parametrize("output_folder", ["HR", "LR", "metadata", "reports", "../escape", "/tmp/out", ""])
@@ -104,6 +122,21 @@ def test_export_config_accepts_supported_lr_sources(tmp_path: Path, lr_source: s
 
     assert config.export.final_lr_source == lr_source
     assert config.export.gate_lr_source == lr_source
+
+
+@pytest.mark.parametrize("resize_mode", ["copy", "match_raw", "raw", "1.0", "0.75", "0.5"])
+def test_export_config_accepts_supported_resize_modes(tmp_path: Path, resize_mode: str):
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    config_path = tmp_path / "config.yaml"
+    data = base_config(input_dir, output_dir)
+    data["export"] = {"final_lr_resize_mode": resize_mode}
+    write_yaml(config_path, data)
+
+    config = load_config(config_path)
+
+    assert config.export.final_lr_resize_mode == resize_mode
 
 
 def test_export_config_rejects_unknown_final_lr_source(tmp_path: Path):

@@ -1,0 +1,61 @@
+﻿task:
+  name: flower_quality_demo
+  seed: 42
+
+data:
+  input_dir: D:/repository/livePhoto2LRHR/real_smoke/flower_quality_demo/input
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/flower_quality_demo/output
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - frame_select
+    - align
+
+frame_select:
+  algorithm: opencv_similarity
+  device: cpu
+  sample_fps: 10
+  top_k: 5
+  batch_size: 8
+  resize_short_side: 518
+
+align:
+  enabled: true
+  algorithm: coarse_to_flow
+  device: cpu
+  output_folder: LR_aligned_flow
+  confidence_threshold: 0.0
+  fallback_algorithm: identity_alignment
+  on_failure: keep_original
+  coarse_algorithm: phase_correlation_translation
+  optical_flow:
+    enabled: true
+    algorithm: dis
+
+report:
+  enabled: true
+  output_folder: reports_flow
+  aligned_folder: LR_aligned_flow
+  color_matched_folder: LR_color_matched
+  max_preview_samples: 4
+  thumbnail_size: 160
+
+export:
+  enabled: true
+  input_report: reports_flow/quality_report.csv
+  output_folder: final_flow
+  final_lr_source: raw
+  gate_lr_source: aligned
+  final_lr_resize_mode: copy
+  require_align_status: success
+  max_source_to_hr_mae: 80.0
+  min_source_to_hr_psnr: 4.0
+  require_source_to_hr_aspect_ratio_match: true
+
+output:
+  save_metadata: true
+  overwrite: true

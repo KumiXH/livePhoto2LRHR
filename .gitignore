@@ -11,3 +11,6 @@ dist/
 *.egg-info/
 outputs/
 model_cache/
+real_smoke/**/output/
+real_smoke/**/output_*/
+temp_downsample_lr_color_matched.py

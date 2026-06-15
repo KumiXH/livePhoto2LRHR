@@ -58,7 +58,7 @@ class AlignStage:
         self.on_failure = on_failure
         self.device = device
 
-    def run(self, pair: SamplePair) -> AlignStageResult:
+    def run(self, pair: SamplePair, force_retry_failed: bool = False) -> AlignStageResult:
         lr_path = output_image_path(self.output_dir, "LR", pair.relative_stem, self.output_ext)
         hr_path = output_image_path(self.output_dir, "HR", pair.relative_stem, self.output_ext)
         meta_path = metadata_path(self.output_dir, pair.relative_stem)
@@ -70,16 +70,17 @@ class AlignStage:
                 status="align_skipped_missing_input",
                 message="missing phase 1 output",
             )
-        if not self.overwrite and aligned_path.exists():
+        metadata: dict[str, Any] = {}
+        if self.save_metadata and meta_path.exists():
+            metadata = self._read_metadata(meta_path)
+        retry_failed = force_retry_failed and self._should_retry_failed(metadata)
+        if not self.overwrite and aligned_path.exists() and not retry_failed:
             return AlignStageResult(sample_id=pair.sample_id, status="align_skipped_existing")
 
-        metadata: dict[str, Any] = {}
         lr_rgb = None
         try:
             lr_rgb = read_rgb_array(lr_path)
             hr_rgb = read_rgb_array(hr_path)
-            if self.save_metadata and meta_path.exists():
-                metadata = self._read_metadata(meta_path)
             align_result, result_algorithm = self._run_alignment(
                 aligner=self.aligner,
                 algorithm_name=self.algorithm_name,
@@ -248,3 +249,9 @@ class AlignStage:
             "diagnostics": diagnostics,
         }
         write_yaml(meta_path, metadata)
+
+    def _should_retry_failed(self, metadata: dict[str, Any]) -> bool:
+        align = metadata.get("align")
+        if not isinstance(align, dict):
+            return False
+        return str(align.get("status", "")).lower() == "failed"

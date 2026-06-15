@@ -20,8 +20,8 @@ image + mp4
 | 阶段 | 目标 | 当前方法 / models | 推荐默认值 | 当前建议 |
 | --- | --- | --- | --- | --- |
 | Phase 1: Frame Selection | 从 MP4 中找出与静态图最接近的一帧 | `dinov2_similarity`, `opencv_similarity` | `dinov2_similarity` | 真正生成数据集时建议优先用 DINOv2。OpenCV 更适合 CPU smoke 或快速验证。 |
-| Phase 2: Alignment | 让 LR 在几何上尽量对齐 HR | `identity_alignment`, `phase_correlation_translation`, `ecc_alignment`, `coarse_to_flow` | `coarse_to_flow` + `phase_correlation_translation` + DIS flow | 这是当前最强 baseline。`identity_alignment` 适合作为 fallback 和调试基线。 |
-| Phase 3: Color Matching | 缩小 LR 与 HR 的亮度 / 颜色差距 | `identity_color_match`, `mean_std_lab` | `mean_std_lab` 仅供实验 | 目前建议保持可选，不要默认认为调色后的 LR 一定更适合作为最终训练输入。 |
+| Phase 2: Alignment | 让 LR 在几何上尽量对齐 HR | `identity_alignment`, `phase_correlation_translation`, `ecc_alignment`, `coarse_to_flow`, `global_ecc_homography`, `feature_match_transform`, `feature_match_homography`, `hybrid_feature_flow`, `mask_aware_alignment` | `coarse_to_flow` + `phase_correlation_translation` + DIS flow | 当前已经形成“四档”高级路线：全局几何、稀疏特征匹配、混合局部细化、mask-aware 主体对齐。 |
+| Phase 3: Color Matching | 缩小 LR 与 HR 的亮度 / 颜色差距 | `identity_color_match`, `mean_std_lab`, `histogram_match_lab`, `retinex_color_match`, `masked_color_transfer`, `image_adaptive_3d_lut_color_match`, `low_frequency_joint_appearance_match`, `learned_retinex_color_match`, `mask_aware_harmonization_network`, `diffusion_harmonization` | 默认先用 `retinex_color_match`；若想统一完成亮度和颜色，优先试 `image_adaptive_3d_lut_color_match` 与 `low_frequency_joint_appearance_match` | 当前已形成 classical baseline、LUT 路线、低频联合路线，以及 3 条可继续替换为真深度模型的 proxy 路线。 |
 
 ### 1.1 Phase 1：抽帧匹配
 
@@ -40,6 +40,16 @@ image + mp4
   用 OpenCV ECC 做 `translation / euclidean / affine / homography` 风格配准。
 - `coarse_to_flow`
   先做 coarse align，再在“误差真的变小”的前提下接受 dense flow refinement。
+- `feature_match_homography`
+  用局部特征点匹配 + RANSAC 单应矩阵做几何对齐。当前实现基于 OpenCV `ORB/AKAZE`，默认推荐 `ORB`。
+- `global_ecc_homography`
+  用 ECC 直接估计全局单应矩阵，属于全局几何增强档。
+- `feature_match_transform`
+  用局部特征匹配估计 `affine / similarity / homography`，属于稀疏特征匹配档。
+- `hybrid_feature_flow`
+  先做全局粗对齐，再做 dense flow 局部细化，属于混合局部细化档。
+- `mask_aware_alignment`
+  先做全局粗对齐，再对疑似主体区域做局部再对齐，属于 mask-aware 主体对齐档。
 
 ### 1.3 Phase 3：调色
 
@@ -47,6 +57,22 @@ image + mp4
   不做颜色变化，仅用于基线对照。
 - `mean_std_lab`
   在 `LAB` 色彩空间下匹配均值/方差。对部分样本有帮助，对部分样本也可能变差，所以目前仍然视为实验性 baseline。
+- `histogram_match_lab`
+  在 `LAB` 或 `RGB` 空间做逐通道直方图匹配。适合 LR/HR 全局亮度、色调分布差异更明显的样本。
+- `retinex_color_match`
+  先做 Retinex 风格亮度归一，再补色度统计。适合 LR/HR 曝光、阴影、整体照明差明显的样本。
+- `masked_color_transfer`
+  先从 LR/HR 差异里估计主体区域，再分别对主体和背景做颜色迁移。适合主体与背景偏色方向不同的样本。
+- `image_adaptive_3d_lut_color_match`
+  用输入自适应 3D LUT 做统一颜色映射。亮度、饱和度、色相可以一起变化，比较适合“颜色和亮度统一对齐”的目标。
+- `low_frequency_joint_appearance_match`
+  先拆低频外观和高频细节，只在低频层把 LR 外观往 HR 靠，再尽量保留 LR 细节。
+- `learned_retinex_color_match`
+  当前是学习式 Retinex 的 proxy 版本，接口、配置和导出链已经接好，后续可替换成真网络权重。
+- `mask_aware_harmonization_network`
+  当前是 mask-aware harmonization 的 proxy 版本，保留主体感知接口，后续可替换成真深度 harmonization 网络。
+- `diffusion_harmonization`
+  当前是 diffusion harmonization 的 proxy 版本，先用受约束的多步低频/LUT 联合流程占位，后续可接真 diffusion 后端。
 
 ### 1.4 后续增强方向
 
@@ -246,7 +272,23 @@ identity_alignment
 phase_correlation_translation
 ecc_alignment
 coarse_to_flow
+global_ecc_homography
+feature_match_transform
+feature_match_homography
+hybrid_feature_flow
+mask_aware_alignment
 ```
+
+当前阶段二的四档高级方案可以这样理解：
+
+1. 第一档，全局几何对齐：
+   `phase_correlation_translation` / `ecc_alignment` / `global_ecc_homography`
+2. 第二档，稀疏特征匹配：
+   `feature_match_transform` / `feature_match_homography`
+3. 第三档，混合局部细化：
+   `hybrid_feature_flow`
+4. 第四档，主体感知对齐：
+   `mask_aware_alignment`
 
 `coarse_to_flow` 的行为是：
 
@@ -254,6 +296,113 @@ coarse_to_flow
 2. 再尝试 dense flow refinement
 3. 只有在实测误差变小时，才接受 flow 结果
 4. 如果 flow 后更差，则保留 coarse 结果
+
+`feature_match_homography` 的行为是：
+
+1. 先在 LR/HR 同尺寸工作图上提取局部特征
+2. 使用 ratio test 过滤匹配对
+3. 用 RANSAC 估计 `lr -> hr` 单应矩阵
+4. 只有在实际 `post_alignment_error < pre_alignment_error` 时才接受结果
+
+推荐配置示例：
+
+```yaml
+align:
+  enabled: true
+  algorithm: feature_match_homography
+  output_folder: LR_aligned_h
+  confidence_threshold: 0.3
+  fallback_algorithm: identity_alignment
+  on_failure: keep_original
+  feature_match:
+    detector: orb
+    max_keypoints: 4000
+    ratio_test: 0.6
+    min_matches: 10
+    ransac_reproj_threshold: 3.0
+```
+
+`global_ecc_homography` 推荐用于：
+
+- 画面整体透视变化明显
+- 不想先走特征匹配
+- 希望先尝试“纯全局连续优化”路径
+
+示例：
+
+```yaml
+align:
+  enabled: true
+  algorithm: global_ecc_homography
+  output_folder: LR_aligned_ecc_h
+  confidence_threshold: 0.3
+  fallback_algorithm: phase_correlation_translation
+  ecc:
+    number_of_iterations: 200
+    termination_eps: 1.0e-6
+    gaussian_filter_size: 3
+```
+
+`feature_match_transform` 推荐用于：
+
+- 你想显式控制 `affine / similarity / homography`
+- 希望比纯 ECC 更依赖局部结构匹配
+
+示例：
+
+```yaml
+align:
+  enabled: true
+  algorithm: feature_match_transform
+  output_folder: LR_aligned_affine
+  fallback_algorithm: phase_correlation_translation
+  feature_match:
+    detector: orb
+    transform_model: affine
+    max_keypoints: 4000
+    ratio_test: 0.6
+    min_matches: 10
+    ransac_reproj_threshold: 3.0
+```
+
+`hybrid_feature_flow` 推荐用于：
+
+- 整体位置能拉正
+- 但局部 still 有形变、手抖、小运动
+
+示例：
+
+```yaml
+align:
+  enabled: true
+  algorithm: hybrid_feature_flow
+  output_folder: LR_aligned_hybrid
+  coarse_algorithm: phase_correlation_translation
+  optical_flow:
+    enabled: true
+    algorithm: dis
+```
+
+`mask_aware_alignment` 推荐用于：
+
+- 前景主体和背景运动不一致
+- 希望先做全局对齐，再尝试主体局部修正
+
+示例：
+
+```yaml
+align:
+  enabled: true
+  algorithm: mask_aware_alignment
+  output_folder: LR_aligned_mask
+  coarse_algorithm: phase_correlation_translation
+  mask_aware:
+    motion_model: translation
+    difference_threshold: 18.0
+    min_mask_fraction: 0.02
+    blend_blur_ksize: 9
+    morphology_kernel_size: 5
+```
 
 ## 8. Phase 3：调色
 
@@ -284,9 +433,89 @@ color_match:
 ```text
 identity_color_match
 mean_std_lab
+histogram_match_lab
+retinex_color_match
+masked_color_transfer
+image_adaptive_3d_lut_color_match
+low_frequency_joint_appearance_match
+learned_retinex_color_match
+mask_aware_harmonization_network
+diffusion_harmonization
 ```
 
 `mean_std_lab` 在一些样本上会改善亮度/颜色，但在另一些样本上也可能变差，因此建议继续把它当作实验基线使用。
+
+`histogram_match_lab` 的行为是：
+
+1. 把 HR 缩到 LR 当前网格
+2. 在 `LAB` 或 `RGB` 空间逐通道做直方图匹配
+3. 输出匹配后的 LR
+4. metadata 中会记录“需要 replay reference”，这样在 `match_raw/raw` 导出链里仍能回到低清尺寸
+
+推荐配置示例：
+
+```yaml
+color_match:
+  enabled: true
+  algorithm: histogram_match_lab
+  input_folder: auto
+  output_folder: LR_color_hist
+  histogram_match:
+    color_space: lab
+    bins: 256
+```
+
+```yaml
+color_match:
+  enabled: true
+  algorithm: retinex_color_match
+  input_folder: auto
+  output_folder: LR_color_retinex
+  retinex:
+    sigma: 15.0
+    eps: 1.0e-3
+```
+
+```yaml
+color_match:
+  enabled: true
+  algorithm: masked_color_transfer
+  input_folder: auto
+  output_folder: LR_color_masked
+  masked_transfer:
+    color_space: lab
+    difference_threshold: 12.0
+    min_mask_fraction: 0.01
+    max_mask_fraction: 0.85
+    morphology_kernel_size: 5
+```
+
+```yaml
+color_match:
+  enabled: true
+  algorithm: image_adaptive_3d_lut_color_match
+  input_folder: auto
+  output_folder: LR_color_lut
+  adaptive_3d_lut:
+    color_space: rgb
+    grid_size: 9
+    smoothing_sigma: 1.0
+    identity_mix: 0.1
+```
+
+```yaml
+color_match:
+  enabled: true
+  algorithm: low_frequency_joint_appearance_match
+  input_folder: auto
+  output_folder: LR_color_lowfreq
+  low_frequency_joint:
+    color_space: lab
+    sigma: 5.0
+    base_mix: 0.85
+    detail_preservation: 1.0
+    chroma_strength: 0.7
+```
 
 ## 9. 质量报告
 
@@ -535,7 +764,7 @@ input/a/IMG_0001.mp4
 
 ```text
 Phase 1: DINOv2 / OpenCV 抽帧匹配
-Phase 2: identity / phase correlation / ECC / coarse-to-flow 对齐
+Phase 2: identity / phase correlation / ECC / coarse-to-flow / ECC homography / feature matching / hybrid flow / mask-aware 对齐
 Phase 3: identity / mean-std LAB 调色
 Report: CSV + contact sheet
 Export: 质量门槛驱动的最终 LR/HR 导出
@@ -621,6 +850,19 @@ diagnostics
 ## 17. 更强调色 roadmap
 
 当前 `mean_std_lab` 只是 baseline。
+
+当前已经落地的更强 classical color backend：
+
+```text
+histogram_match_lab
+retinex_color_match
+masked_color_transfer
+image_adaptive_3d_lut_color_match
+low_frequency_joint_appearance_match
+learned_retinex_color_match
+mask_aware_harmonization_network
+diffusion_harmonization
+```
 
 推荐后续增强方向：
 

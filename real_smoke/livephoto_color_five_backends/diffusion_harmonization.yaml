@@ -1,0 +1,87 @@
+task:
+  name: livephoto_color_diffusion_harmonization
+  seed: 42
+
+data:
+  input_dir: D:/SR数据集/livePhoto
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_color_five_backends/output_diffusion_harmonization
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - frame_select
+    - align
+    - color_match
+
+runtime:
+  retry_failed_samples: true
+
+frame_select:
+  algorithm: opencv_similarity
+  device: cpu
+  sample_fps: 10
+  top_k: 5
+  batch_size: 8
+  resize_short_side: 518
+
+align:
+  enabled: true
+  algorithm: hybrid_feature_flow
+  device: cpu
+  output_folder: LR_aligned_diffusion_harmonization
+  confidence_threshold: 0.0
+  fallback_algorithm: phase_correlation_translation
+  on_failure: keep_original
+  coarse_algorithm: feature_match_transform
+  optical_flow:
+    enabled: true
+    algorithm: dis
+  feature_match:
+    detector: orb
+    transform_model: affine
+    max_keypoints: 4000
+    ratio_test: 0.6
+    min_matches: 10
+    ransac_reproj_threshold: 3.0
+
+color_match:
+  enabled: true
+  algorithm: diffusion_harmonization
+  device: cpu
+  input_folder: auto
+  output_folder: LR_color_diffusion_harmonization
+  confidence_threshold: 0.0
+  on_failure: keep_original
+  diffusion_harmonization:
+    color_space: lab
+    num_steps: 4
+    guidance_strength: 0.6
+    low_frequency_sigma: 4.0
+    lut_identity_mix: 0.15
+
+report:
+  enabled: true
+  output_folder: reports_diffusion_harmonization
+  aligned_folder: LR_aligned_diffusion_harmonization
+  color_matched_folder: LR_color_diffusion_harmonization
+  max_preview_samples: 4
+  thumbnail_size: 160
+
+export:
+  enabled: true
+  input_report: reports_diffusion_harmonization/quality_report.csv
+  output_folder: final_diffusion_harmonization_half
+  final_lr_source: color_matched
+  gate_lr_source: color_matched
+  final_lr_resize_mode: 0.5
+  require_align_status: success
+  max_source_to_hr_mae: 40.0
+  min_source_to_hr_psnr: 18.0
+  require_source_to_hr_aspect_ratio_match: true
+
+output:
+  save_metadata: true
+  overwrite: true

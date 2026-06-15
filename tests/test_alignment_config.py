@@ -48,6 +48,17 @@ def test_align_config_defaults_to_disabled_identity(tmp_path: Path):
     assert config.align.ecc.gaussian_filter_size == 5
     assert config.align.optical_flow.enabled is False
     assert config.align.optical_flow.algorithm == "dis"
+    assert config.align.feature_match.detector == "orb"
+    assert config.align.feature_match.transform_model == "homography"
+    assert config.align.feature_match.max_keypoints == 4000
+    assert config.align.feature_match.ratio_test == 0.6
+    assert config.align.feature_match.min_matches == 10
+    assert config.align.feature_match.ransac_reproj_threshold == 3.0
+    assert config.align.mask_aware.motion_model == "translation"
+    assert config.align.mask_aware.difference_threshold == 18.0
+    assert config.align.mask_aware.min_mask_fraction == 0.02
+    assert config.align.mask_aware.blend_blur_ksize == 9
+    assert config.align.mask_aware.morphology_kernel_size == 5
 
 
 def test_align_config_loads_enabled_yaml_values(tmp_path: Path):
@@ -79,6 +90,21 @@ def test_align_config_loads_enabled_yaml_values(tmp_path: Path):
             "gaussian_filter_size": 3,
         },
         "optical_flow": {"enabled": True, "algorithm": "farneback"},
+        "feature_match": {
+            "detector": "akaze",
+            "transform_model": "affine",
+            "max_keypoints": 2000,
+            "ratio_test": 0.85,
+            "min_matches": 14,
+            "ransac_reproj_threshold": 5.0,
+        },
+        "mask_aware": {
+            "motion_model": "affine",
+            "difference_threshold": 25.0,
+            "min_mask_fraction": 0.05,
+            "blend_blur_ksize": 11,
+            "morphology_kernel_size": 7,
+        },
     }
     write_yaml(config_path, data)
 
@@ -102,6 +128,17 @@ def test_align_config_loads_enabled_yaml_values(tmp_path: Path):
     assert config.align.ecc.gaussian_filter_size == 3
     assert config.align.optical_flow.enabled is True
     assert config.align.optical_flow.algorithm == "farneback"
+    assert config.align.feature_match.detector == "akaze"
+    assert config.align.feature_match.transform_model == "affine"
+    assert config.align.feature_match.max_keypoints == 2000
+    assert config.align.feature_match.ratio_test == 0.85
+    assert config.align.feature_match.min_matches == 14
+    assert config.align.feature_match.ransac_reproj_threshold == 5.0
+    assert config.align.mask_aware.motion_model == "affine"
+    assert config.align.mask_aware.difference_threshold == 25.0
+    assert config.align.mask_aware.min_mask_fraction == 0.05
+    assert config.align.mask_aware.blend_blur_ksize == 11
+    assert config.align.mask_aware.morphology_kernel_size == 7
 
 
 @pytest.mark.parametrize("output_folder", ["HR", "LR", "metadata", "../escape", "/tmp/out", ""])
