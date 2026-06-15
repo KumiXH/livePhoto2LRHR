@@ -202,6 +202,28 @@ mask_aware_harmonization_network
 diffusion_harmonization
 ```
 
+## 黄金案例
+
+当前这批真实 smoke 中，作为“可直接复现最终结果”的黄金案例，建议优先看下面两套：
+
+1. `image_adaptive_3d_lut_color_match`
+   参考 YAML：`real_smoke/livephoto_color_five_backends/adaptive_3d_lut.yaml`
+   真实输出目录：`real_smoke/livephoto_color_five_backends/output_adaptive_3d_lut`
+   最终训练集目录：`real_smoke/livephoto_color_five_backends/output_adaptive_3d_lut/final_adaptive_3d_lut_half`
+2. `diffusion_harmonization`
+   参考 YAML：`real_smoke/livephoto_color_five_backends/diffusion_harmonization.yaml`
+   真实输出目录：`real_smoke/livephoto_color_five_backends/output_diffusion_harmonization`
+   最终训练集目录：`real_smoke/livephoto_color_five_backends/output_diffusion_harmonization/final_diffusion_harmonization_half`
+
+这两套案例都已经在真实目录 `D:/SR数据集/livePhoto` 上跑通过，能产出最终可用于超分训练的 `LR/HR` 结果。
+
+直接复现命令：
+
+```bash
+livephoto2lrhr --config real_smoke/livephoto_color_five_backends/adaptive_3d_lut.yaml
+livephoto2lrhr --config real_smoke/livephoto_color_five_backends/diffusion_harmonization.yaml
+```
+
 当前最终导出（final export）支持“训练用 LR 来源”和“质量筛选来源”分离，质量门槛包括：
 
 ```text

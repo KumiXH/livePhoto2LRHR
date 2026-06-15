@@ -21,7 +21,7 @@ image + mp4
 | --- | --- | --- | --- | --- |
 | Phase 1: Frame Selection | 从 MP4 中找出与静态图最接近的一帧 | `dinov2_similarity`, `opencv_similarity` | `dinov2_similarity` | 真正生成数据集时建议优先用 DINOv2。OpenCV 更适合 CPU smoke 或快速验证。 |
 | Phase 2: Alignment | 让 LR 在几何上尽量对齐 HR | `identity_alignment`, `phase_correlation_translation`, `ecc_alignment`, `coarse_to_flow`, `global_ecc_homography`, `feature_match_transform`, `feature_match_homography`, `hybrid_feature_flow`, `mask_aware_alignment` | `coarse_to_flow` + `phase_correlation_translation` + DIS flow | 当前已经形成“四档”高级路线：全局几何、稀疏特征匹配、混合局部细化、mask-aware 主体对齐。 |
-| Phase 3: Color Matching | 缩小 LR 与 HR 的亮度 / 颜色差距 | `identity_color_match`, `mean_std_lab`, `histogram_match_lab`, `retinex_color_match`, `masked_color_transfer`, `image_adaptive_3d_lut_color_match`, `low_frequency_joint_appearance_match`, `learned_retinex_color_match`, `mask_aware_harmonization_network`, `diffusion_harmonization` | 默认先用 `retinex_color_match`；若想统一完成亮度和颜色，优先试 `image_adaptive_3d_lut_color_match` 与 `low_frequency_joint_appearance_match` | 当前已形成 classical baseline、LUT 路线、低频联合路线，以及 3 条可继续替换为真深度模型的 proxy 路线。 |
+| Phase 3: Color Matching | 缩小 LR 与 HR 的亮度 / 颜色差距 | `identity_color_match`, `mean_std_lab`, `histogram_match_lab`, `retinex_color_match`, `masked_color_transfer`, `image_adaptive_3d_lut_color_match`, `low_frequency_joint_appearance_match`, `learned_retinex_color_match`, `mask_aware_harmonization_network`, `diffusion_harmonization` | 默认先用 `retinex_color_match`；若想统一完成亮度和颜色，优先试 `image_adaptive_3d_lut_color_match` 与 `low_frequency_joint_appearance_match` | 当前已形成 classical baseline、LUT 路线、低频联合路线，以及 3 条可继续替换为真深度模型的 proxy 路线。当前真实黄金案例优先看 `image_adaptive_3d_lut_color_match` 与 `diffusion_harmonization`。 |
 
 ### 1.1 Phase 1：抽帧匹配
 
@@ -515,6 +515,49 @@ color_match:
     base_mix: 0.85
     detail_preservation: 1.0
     chroma_strength: 0.7
+```
+
+### 8.1 黄金案例
+
+如果你想直接参考“已经在真实数据上跑通，并且能产出最终训练集”的正式案例，当前优先看下面两套。
+
+说明：
+
+- 这两套是当前项目里的黄金案例，重点是“真实跑通过、能稳定出最终结果、主观观感强”。
+- 它们使用真实输入目录 `D:/SR数据集/livePhoto`。
+- 它们都已经完成从 phase 1 到 final export 的整链路运行。
+- 最终导出策略都固定为：
+  `final_lr_source: color_matched`
+  `gate_lr_source: color_matched`
+  `final_lr_resize_mode: 0.5`
+
+黄金案例 A：`image_adaptive_3d_lut_color_match`
+
+- 参考 YAML：
+  `real_smoke/livephoto_color_five_backends/adaptive_3d_lut.yaml`
+- 真实输出目录：
+  `real_smoke/livephoto_color_five_backends/output_adaptive_3d_lut`
+- 最终训练集目录：
+  `real_smoke/livephoto_color_five_backends/output_adaptive_3d_lut/final_adaptive_3d_lut_half`
+- 特点：
+  用输入自适应 3D LUT 一次性统一亮度、色相、饱和度映射，比较适合你想要的“颜色和亮度一起对上”的目标。
+
+黄金案例 B：`diffusion_harmonization`
+
+- 参考 YAML：
+  `real_smoke/livephoto_color_five_backends/diffusion_harmonization.yaml`
+- 真实输出目录：
+  `real_smoke/livephoto_color_five_backends/output_diffusion_harmonization`
+- 最终训练集目录：
+  `real_smoke/livephoto_color_five_backends/output_diffusion_harmonization/final_diffusion_harmonization_half`
+- 特点：
+  当前实现是 diffusion 风格 harmonization 的工程化 proxy，走多步低频外观牵引 + LUT 混合约束，在真实样本上主观效果已经比较强。
+
+直接复现命令：
+
+```bash
+livephoto2lrhr --config real_smoke/livephoto_color_five_backends/adaptive_3d_lut.yaml
+livephoto2lrhr --config real_smoke/livephoto_color_five_backends/diffusion_harmonization.yaml
 ```
 
 ## 9. 质量报告
