@@ -17,6 +17,24 @@ image + mp4
 
 ## 安装
 
+如果你想直接走一份“默认按 GPU 安装”的 requirements 文件：
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+这份 [requirements.txt](/D:/repository/livePhoto2LRHR/requirements.txt) 当前默认使用 PyTorch 官方 `CUDA 12.6` 轮子，适合大多数新的 NVIDIA GPU 机器。
+
+如果你的机器驱动较老，装 `cu126` 不合适，可以把 `requirements.txt` 里的 `cu126` 改成 PyTorch 官方支持的其他 CUDA 轮子版本，例如 `cu118`，并同步调整 `torch / torchvision` 版本号。
+
+安装后可快速验证：
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
+```
+
+如果输出最后一行是 `True`，说明 PyTorch 已经识别到 GPU。
+
 如果要使用 `DINOv2` 抽帧匹配：
 
 ```bash

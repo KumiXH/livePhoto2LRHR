@@ -1,0 +1,23 @@
+# livePhoto2LRHR GPU install profile
+#
+# Default target:
+# - Python 3.10+
+# - Windows / Linux
+# - NVIDIA driver compatible with CUDA 12.6 runtime
+#
+# This file intentionally uses the official PyTorch CUDA wheel index so
+# `torch` / `torchvision` are installed as GPU builds by default.
+#
+# If your machine cannot use CUDA 12.6, replace `cu126` below with another
+# official runtime such as `cu118` and adjust the torch / torchvision versions
+# using the official PyTorch install matrix.
+
+--index-url https://download.pytorch.org/whl/cu126
+--extra-index-url https://pypi.org/simple
+
+# Install the local project and test tools.
+-e .[dev]
+
+# GPU-enabled PyTorch for DINOv2 and CUDA execution.
+torch==2.7.0
+torchvision==0.22.0
