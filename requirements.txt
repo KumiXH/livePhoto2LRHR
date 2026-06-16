@@ -3,16 +3,16 @@
 # Default target:
 # - Python 3.10+
 # - Windows / Linux
-# - NVIDIA driver compatible with CUDA 12.6 runtime
+# - NVIDIA driver compatible with CUDA 12.1 runtime
 #
 # This file intentionally uses the official PyTorch CUDA wheel index so
 # `torch` / `torchvision` are installed as GPU builds by default.
 #
-# If your machine cannot use CUDA 12.6, replace `cu126` below with another
+# If your machine cannot use CUDA 12.1, replace `cu121` below with another
 # official runtime such as `cu118` and adjust the torch / torchvision versions
 # using the official PyTorch install matrix.
 
---index-url https://download.pytorch.org/whl/cu126
+--index-url https://download.pytorch.org/whl/cu121
 --extra-index-url https://pypi.org/simple
 
 # Install the local project and test tools.

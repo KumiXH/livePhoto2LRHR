@@ -23,9 +23,9 @@ image + mp4
 python -m pip install -r requirements.txt
 ```
 
-这份 [requirements.txt](/D:/repository/livePhoto2LRHR/requirements.txt) 当前默认使用 PyTorch 官方 `CUDA 12.6` 轮子，适合大多数新的 NVIDIA GPU 机器。
+这份 [requirements.txt](/D:/repository/livePhoto2LRHR/requirements.txt) 当前默认使用 PyTorch 官方 `CUDA 12.1` 轮子，适合你的这台 `CUDA Version: 12.1` 机器直接安装。
 
-如果你的机器驱动较老，装 `cu126` 不合适，可以把 `requirements.txt` 里的 `cu126` 改成 PyTorch 官方支持的其他 CUDA 轮子版本，例如 `cu118`，并同步调整 `torch / torchvision` 版本号。
+如果你之后换到别的机器，CUDA 版本不是 `12.1`，可以再把 `requirements.txt` 里的 `cu121` 改成 PyTorch 官方支持的其他 CUDA 轮子版本，例如 `cu118`，并同步调整 `torch / torchvision` 版本号。
 
 安装后可快速验证：
 
