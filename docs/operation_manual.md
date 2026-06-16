@@ -83,6 +83,65 @@ image + mp4
 - 更强的调色后端（color backends）
   例如 histogram matching、masked color transfer、LUT fitting、Retinex、轻量神经网络调色。
 
+### 1.5 模型依赖 / 下载 / 离线支持总表
+
+这张表专门回答一个实际问题：
+
+- 这个算法需不需要额外模型文件？
+- 会不会首次联网下载？
+- 纯离线环境能不能直接跑？
+
+#### Phase 1：抽帧匹配
+
+| 算法 | 需要额外模型文件 | 是否可能首次联网下载 | 是否支持纯离线运行 | 说明 |
+| --- | --- | --- | --- | --- |
+| `opencv_similarity` | 否 | 否 | 是 | 纯 OpenCV / NumPy 方案。 |
+| `fake_selector` | 否 | 否 | 是 | 主要用于测试。 |
+| `dinov2_similarity` | 是 | 是 | 有条件支持 | 需要 PyTorch / torchvision，并且首次通常会通过 `torch.hub` 下载 DINOv2 权重缓存；如果你提前把权重缓存好，也可以离线跑。 |
+
+#### Phase 2：对齐
+
+| 算法 | 需要额外模型文件 | 是否可能首次联网下载 | 是否支持纯离线运行 | 说明 |
+| --- | --- | --- | --- | --- |
+| `identity_alignment` | 否 | 否 | 是 | 不做变换。 |
+| `phase_correlation_translation` | 否 | 否 | 是 | 纯 OpenCV 相位相关平移。 |
+| `ecc_alignment` | 否 | 否 | 是 | 纯 OpenCV ECC 配准。 |
+| `coarse_to_flow` | 否 | 否 | 是 | 当前基于 OpenCV coarse + dense flow。 |
+| `global_ecc_homography` | 否 | 否 | 是 | 纯 OpenCV ECC 全局单应。 |
+| `feature_match_transform` | 否 | 否 | 是 | 当前基于 ORB / AKAZE + RANSAC。 |
+| `feature_match_homography` | 否 | 否 | 是 | 当前基于局部特征匹配 + RANSAC。 |
+| `hybrid_feature_flow` | 否 | 否 | 是 | 当前基于特征粗对齐 + OpenCV dense flow。 |
+| `mask_aware_alignment` | 否 | 否 | 是 | 当前是规则式 mask-aware，对主体区域做再对齐，不依赖深度模型。 |
+
+#### Phase 3：调色
+
+| 算法 | 需要额外模型文件 | 是否可能首次联网下载 | 是否支持纯离线运行 | 说明 |
+| --- | --- | --- | --- | --- |
+| `identity_color_match` | 否 | 否 | 是 | 不做调色。 |
+| `mean_std_lab` | 否 | 否 | 是 | 纯统计匹配。 |
+| `histogram_match_lab` | 否 | 否 | 是 | 纯直方图匹配。 |
+| `retinex_color_match` | 否 | 否 | 是 | 纯 Retinex 风格规则算法。 |
+| `masked_color_transfer` | 否 | 否 | 是 | 当前是规则式主体 / 背景颜色迁移。 |
+| `image_adaptive_3d_lut_color_match` | 否 | 否 | 是 | 当前是现场拟合 3D LUT，不需要预训练权重。 |
+| `low_frequency_joint_appearance_match` | 否 | 否 | 是 | 当前是低频外观联合匹配的规则算法版。 |
+| `learned_retinex_color_match` | 否 | 否 | 是 | 当前实现还是 proxy 接口版，尚未接入真网络权重。 |
+| `mask_aware_harmonization_network` | 否 | 否 | 是 | 当前实现还是 proxy 接口版，尚未接入真深度 harmonization 权重。 |
+| `diffusion_harmonization` | 否 | 否 | 是 | 当前实现还是 diffusion 风格 proxy，不是真 diffusion 模型，因此不需要 `ckpt`。 |
+
+#### 当前黄金案例
+
+| 黄金案例 | 参考 YAML | 需要额外模型文件 | 是否可能首次联网下载 | 是否支持纯离线运行 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| `image_adaptive_3d_lut_color_match` | `real_smoke/livephoto_color_five_backends/adaptive_3d_lut.yaml` | 否 | 否 | 是 | 当前黄金案例之一。整条案例链路使用 `opencv_similarity + hybrid_feature_flow + image_adaptive_3d_lut_color_match`。 |
+| `diffusion_harmonization` | `real_smoke/livephoto_color_five_backends/diffusion_harmonization.yaml` | 否 | 否 | 是 | 当前黄金案例之一。整条案例链路使用 `opencv_similarity + hybrid_feature_flow + diffusion_harmonization`。 |
+
+补充说明：
+
+- 这里说的“需要额外模型文件”，指的是需要单独的 `pth / ckpt / safetensors` 一类权重。
+- 这里说的“首次联网下载”，主要是指运行时自动拉模型，例如 `torch.hub`。
+- 当前工程里真正明确会触发这类行为的，是 `dinov2_similarity`。
+- 如果未来把 `diffusion_harmonization`、`mask_aware_harmonization_network`、`learned_retinex_color_match` 升级成真深度模型，这张表需要同步更新。
+
 ## 2. 环境准备
 
 建议使用 Python 3.10 及以上。

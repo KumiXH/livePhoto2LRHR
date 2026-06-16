@@ -217,12 +217,32 @@ diffusion_harmonization
 
 这两套案例都已经在真实目录 `D:/SR数据集/livePhoto` 上跑通过，能产出最终可用于超分训练的 `LR/HR` 结果。
 
+这两套黄金案例当前都不需要额外下载 `pth / ckpt` 模型权重。它们对应的抽帧、对齐、调色链路目前都是 OpenCV / NumPy / 规则算法路线，可直接离线复现。
+
 直接复现命令：
 
 ```bash
 livephoto2lrhr --config real_smoke/livephoto_color_five_backends/adaptive_3d_lut.yaml
 livephoto2lrhr --config real_smoke/livephoto_color_five_backends/diffusion_harmonization.yaml
 ```
+
+## 模型依赖说明
+
+当前项目里，真正会涉及“额外模型文件 / 首次联网下载”的，主要是：
+
+- `dinov2_similarity`
+  需要 PyTorch 与 torchvision，并且首次运行会通过 `torch.hub` 拉取 DINOv2 权重缓存。
+
+当前两个黄金案例：
+
+- `image_adaptive_3d_lut_color_match`
+- `diffusion_harmonization`
+
+都不需要额外 `pth / ckpt`，也不会在运行时自动下载模型。
+
+更完整的按阶段总表，请看：
+
+- [docs/operation_manual.md](/D:/repository/livePhoto2LRHR/docs/operation_manual.md)
 
 当前最终导出（final export）支持“训练用 LR 来源”和“质量筛选来源”分离，质量门槛包括：
 
