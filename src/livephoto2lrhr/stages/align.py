@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ class AlignStageResult:
     sample_id: str
     status: str
     message: str = ""
+    error_traceback: str = ""
 
 
 class AlignStage:
@@ -100,6 +102,9 @@ class AlignStage:
                 message=str(exc),
             )
             result_algorithm = self.algorithm_name
+            error_traceback = traceback.format_exc()
+        else:
+            error_traceback = ""
 
         accepted = align_result.status == "success" and align_result.confidence >= self.confidence_threshold
         fallback_used = False
@@ -159,9 +164,19 @@ class AlignStage:
                     fallback_used=fallback_used,
                 )
         except Exception as exc:
-            return AlignStageResult(sample_id=pair.sample_id, status="align_write_failed", message=str(exc))
+            return AlignStageResult(
+                sample_id=pair.sample_id,
+                status="align_write_failed",
+                message=str(exc),
+                error_traceback=traceback.format_exc(),
+            )
 
-        return AlignStageResult(sample_id=pair.sample_id, status=final_status, message=align_result.message)
+        return AlignStageResult(
+            sample_id=pair.sample_id,
+            status=final_status,
+            message=align_result.message,
+            error_traceback=error_traceback,
+        )
 
     def _run_alignment(
         self,

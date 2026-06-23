@@ -205,6 +205,9 @@ output/
   LR/
   HR/
   metadata/
+  sample_status.yaml
+  sample_status.csv
+  failed_samples.yaml
   run_summary.yaml
 ```
 
@@ -246,6 +249,87 @@ output_dir: /data/livephoto/output
 ```
 
 除非是专门的 smoke-test 配置，否则尽量不要把机器私有路径提交到仓库里。
+
+## 4.3 运行产物说明
+
+一次完整运行后，你通常会看到下面几类日志 / 表 / metadata：
+
+### `run_summary.yaml`
+
+这是“整次运行”的总表，适合看：
+
+- 总成功数 / 失败数 / skip 数
+- 每阶段总耗时
+- 并行 worker / GPU 分配
+- 是否发生断点续跑
+- 失败清单路径
+- 样本级状态总表路径
+
+重点字段：
+
+```text
+counts
+execution.stage_timings_sec
+execution.total_runtime_sec
+execution.failed_samples_manifest
+execution.sample_status_yaml
+execution.sample_status_csv
+pair_discovery
+samples
+```
+
+### `failed_samples.yaml`
+
+这是“失败样本清单”，适合快速筛出这轮失败的样本。
+
+### `sample_status.yaml`
+
+这是“按样本汇总”的 YAML 状态表，适合人工排障。每个样本会统一记录：
+
+- source image / video
+- 阶段一状态、消息、开始时间、结束时间、耗时、异常堆栈
+- 阶段二状态、消息、开始时间、结束时间、耗时、异常堆栈
+- 阶段三状态、消息、开始时间、结束时间、耗时、异常堆栈
+- 最后一个阶段状态
+
+### `sample_status.csv`
+
+这是 `sample_status.yaml` 的表格版，适合：
+
+- Excel 查看
+- pandas 统计
+- grep / 筛选失败样本
+- 后续做 dashboard
+
+### `metadata/*.yaml`
+
+这是“单样本细节记录”，重点放算法侧信息，例如：
+
+- phase 1 选中的帧、top-k、diagnostics
+- phase 2 的 transforms / diagnostics / confidence
+- phase 3 的 transforms / diagnostics / confidence
+
+适合追单样本的算法细节，不适合做批量统计。
+
+### `reports*/quality_report.csv`
+
+这是质量报告，适合看：
+
+- 原始 LR / 对齐 LR / 调色 LR 到 HR 的各种指标
+- MAE / PSNR / SSIM
+- 尺寸 / 比例 / 边缘伪影
+
+### `reports*/quality_report_zh.csv`
+
+这是质量报告的中文表头版本，方便直接看中文列名。
+
+### `final*/manifest.csv`
+
+这是最终导出清单，适合看：
+
+- 哪些样本被接受
+- 哪些样本被拒绝
+- 被拒绝原因是什么
 
 ## 5. 推荐首次运行方式
 

@@ -15,6 +15,11 @@ image + mp4
 
 更完整的生产流程请看 [docs/operation_manual.md](docs/operation_manual.md)。
 
+文档入口：
+
+- 操作手册：[docs/operation_manual.md](/D:/repository/livePhoto2LRHR/docs/operation_manual.md)
+- 日志 / CSV / metadata 说明：见手册中的“运行产物说明”章节
+
 ## 安装
 
 如果你想直接走一份“默认按 GPU 安装”的 requirements 文件：
@@ -183,15 +188,24 @@ output/
 - `execution.stage_timings_sec`
 - `execution.total_runtime_sec`
 - `execution.failed_samples_manifest`
+- `execution.sample_status_yaml`
+- `execution.sample_status_csv`
 - `execution.parallel`
 
 每次运行后，输出目录下还会额外生成一个：
 
 ```text
 failed_samples.yaml
+sample_status.yaml
+sample_status.csv
 ```
 
 里面会集中列出本轮失败样本，方便后续筛查、单独重跑和批处理。
+
+如果你要按“每个样本”查看三阶段状态、开始结束时间、耗时、错误消息和异常堆栈，优先看：
+
+- `sample_status.yaml`
+- `sample_status.csv`
 
 ## 当前可用基线
 

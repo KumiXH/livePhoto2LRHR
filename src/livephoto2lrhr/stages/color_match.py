@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ class ColorMatchStageResult:
     sample_id: str
     status: str
     message: str = ""
+    error_traceback: str = ""
 
 
 class ColorMatchStage:
@@ -94,6 +96,9 @@ class ColorMatchStage:
                 confidence=0.0,
                 message=str(exc),
             )
+            error_traceback = traceback.format_exc()
+        else:
+            error_traceback = ""
 
         accepted = match_result.status == "success" and match_result.confidence >= self.confidence_threshold
         low_confidence = match_result.status == "success" and match_result.confidence < self.confidence_threshold
@@ -126,9 +131,19 @@ class ColorMatchStage:
                     metadata_status=metadata_status,
                 )
         except Exception as exc:
-            return ColorMatchStageResult(sample_id=pair.sample_id, status="color_match_write_failed", message=str(exc))
+            return ColorMatchStageResult(
+                sample_id=pair.sample_id,
+                status="color_match_write_failed",
+                message=str(exc),
+                error_traceback=traceback.format_exc(),
+            )
 
-        return ColorMatchStageResult(sample_id=pair.sample_id, status=final_status, message=match_result.message)
+        return ColorMatchStageResult(
+            sample_id=pair.sample_id,
+            status=final_status,
+            message=match_result.message,
+            error_traceback=error_traceback,
+        )
 
     def _input_lr_path(self, pair: SamplePair, metadata: dict[str, Any]) -> Path | None:
         if self.input_folder == "auto":

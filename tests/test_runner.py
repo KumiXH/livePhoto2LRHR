@@ -41,6 +41,10 @@ def test_run_pipeline_writes_outputs_and_summary(tmp_path: Path, tiny_pair: tupl
     assert summary_yaml["counts"]["success"] == 1
     assert summary_yaml["pair_discovery"]["missing_images"] == []
     assert summary_yaml["pair_discovery"]["missing_videos"] == []
+    assert (output_dir / "sample_status.yaml").exists()
+    assert (output_dir / "sample_status.csv").exists()
+    assert summary_yaml["execution"]["sample_status_yaml"] == str(output_dir / "sample_status.yaml")
+    assert summary_yaml["execution"]["sample_status_csv"] == str(output_dir / "sample_status.csv")
 
 
 def test_run_pipeline_reports_missing_pairs(tmp_path: Path):
@@ -342,6 +346,15 @@ def test_run_pipeline_writes_failed_samples_manifest(tmp_path: Path, tiny_pair: 
     assert failed_samples["failed_samples"][0]["sample_id"] == "flower"
     assert failed_samples["failed_samples"][0]["status"] == "align_failed"
 
+    sample_status = yaml.safe_load((output_dir / "sample_status.yaml").read_text(encoding="utf-8"))
+    flower = sample_status["samples"][0]
+    assert flower["sample_id"] == "flower"
+    assert flower["frame_select_status"] == "success"
+    assert flower["align_status"] == "align_failed"
+    assert flower["align_message"] != ""
+    assert "align_error_traceback" in flower
+    assert flower["last_status"] == "align_failed"
+
 
 def test_run_pipeline_writes_empty_failed_samples_manifest_when_all_success(tmp_path: Path, tiny_pair: tuple[Path, Path]):
     image_path, _ = tiny_pair
@@ -360,6 +373,35 @@ def test_run_pipeline_writes_empty_failed_samples_manifest_when_all_success(tmp_
 
     assert summary["counts"]["success"] == 1
     assert failed_samples["failed_samples"] == []
+
+
+def test_run_pipeline_sample_status_csv_contains_stage_columns(tmp_path: Path, tiny_pair: tuple[Path, Path]):
+    image_path, _ = tiny_pair
+    output_dir = tmp_path / "output"
+    config = AppConfig(
+        data=DataConfig(input_dir=image_path.parent, output_dir=output_dir, image_exts=(".jpg",), video_exts=(".mp4",)),
+        pipeline=PipelineConfig(stages=("frame_select", "align", "color_match")),
+        frame_select=FrameSelectConfig(algorithm="fake_selector", top_k=1),
+        output=OutputConfig(save_metadata=True, overwrite=False),
+        raw={"test": True},
+        align=AlignConfig(enabled=True, algorithm="identity_alignment"),
+        color_match=ColorMatchConfig(enabled=True, algorithm="identity_color_match"),
+    )
+
+    summary = run_pipeline(config)
+
+    csv_path = Path(summary["execution"]["sample_status_csv"])
+    lines = csv_path.read_text(encoding="utf-8-sig").splitlines()
+    header = lines[0]
+    row = lines[1]
+    assert "frame_select_status" in header
+    assert "align_status" in header
+    assert "color_match_status" in header
+    assert "frame_select_duration_sec" in header
+    assert "align_duration_sec" in header
+    assert "color_match_duration_sec" in header
+    assert "last_status" in header
+    assert "color_match_success" in row
 
 
 def test_run_pipeline_records_parallel_runtime_configuration(tmp_path: Path, tiny_pair: tuple[Path, Path]):

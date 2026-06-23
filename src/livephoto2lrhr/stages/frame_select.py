@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,7 @@ class StageResult:
     sample_id: str
     status: str
     message: str = ""
+    error_traceback: str = ""
 
 
 class FrameSelectStage:
@@ -54,7 +56,12 @@ class FrameSelectStage:
         try:
             selection = self.selector.select(pair.image_path, pair.video_path)
         except Exception as exc:
-            return StageResult(sample_id=pair.sample_id, status="frame_select_failed", message=str(exc))
+            return StageResult(
+                sample_id=pair.sample_id,
+                status="frame_select_failed",
+                message=str(exc),
+                error_traceback=traceback.format_exc(),
+            )
 
         try:
             save_rgb_array(selection.frame_rgb, lr_path)
@@ -85,6 +92,11 @@ class FrameSelectStage:
                     },
                 )
         except Exception as exc:
-            return StageResult(sample_id=pair.sample_id, status="write_failed", message=str(exc))
+            return StageResult(
+                sample_id=pair.sample_id,
+                status="write_failed",
+                message=str(exc),
+                error_traceback=traceback.format_exc(),
+            )
 
         return StageResult(sample_id=pair.sample_id, status="success")

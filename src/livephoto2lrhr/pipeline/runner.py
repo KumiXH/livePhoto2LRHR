@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
@@ -15,6 +16,7 @@ from livephoto2lrhr.data.io import write_yaml
 from livephoto2lrhr.data.pairing import SamplePair, discover_pairs
 from livephoto2lrhr.export.dataset import ExportDatasetConfig, export_dataset
 from livephoto2lrhr.reports.quality import QualityReportConfig, generate_quality_report
+from livephoto2lrhr.reports.sample_status import build_sample_status_records, write_sample_status_files
 from livephoto2lrhr.stages.align import AlignStage
 from livephoto2lrhr.stages.color_match import ColorMatchStage
 from livephoto2lrhr.stages.frame_select import FrameSelectStage
@@ -53,6 +55,14 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         {status: 0 for status in (*KNOWN_PHASE_1_STATUSES, *KNOWN_ALIGN_STATUSES, *KNOWN_COLOR_MATCH_STATUSES)}
     )
     samples: list[dict[str, str]] = []
+    stage_events: list[dict[str, Any]] = []
+    pair_lookup = {
+        pair.sample_id: {
+            "source_image": str(pair.image_path),
+            "source_video": str(pair.video_path),
+        }
+        for pair in pair_result.pairs
+    }
     runtime = _runtime_config(config)
     execution = {
         "retry_failed_samples": runtime["retry_failed_samples"],
@@ -61,6 +71,8 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         "stage_timings_sec": {},
         "total_runtime_sec": 0.0,
         "failed_samples_manifest": "",
+        "sample_status_yaml": "",
+        "sample_status_csv": "",
         "parallel": {
             "enabled": False,
             "requested_workers": runtime["parallel"]["num_workers"],
@@ -92,6 +104,18 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
                         "message": result["message"],
                     }
                 )
+                stage_events.append(
+                    {
+                        "sample_id": result["sample_id"],
+                        "stage": "frame_select",
+                        "status": result["status"],
+                        "message": result["message"],
+                        "started_at": result.get("started_at", ""),
+                        "finished_at": result.get("finished_at", ""),
+                        "duration_sec": result.get("duration_sec", ""),
+                        "error_traceback": result.get("error_traceback", ""),
+                    }
+                )
                 if result["status"] == "skipped_existing":
                     execution["resumed_from_existing_outputs"] += 1
         else:
@@ -116,9 +140,24 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
                 algorithm_name=config.frame_select.algorithm,
             )
             for pair in pair_result.pairs:
+                event_start = perf_counter()
+                started_at = _timestamp_now()
                 result = stage.run(pair)
+                finished_at = _timestamp_now()
                 counts[result.status] += 1
                 samples.append({"sample_id": result.sample_id, "status": result.status, "message": result.message})
+                stage_events.append(
+                    {
+                        "sample_id": result.sample_id,
+                        "stage": "frame_select",
+                        "status": result.status,
+                        "message": result.message,
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                        "duration_sec": _elapsed_seconds(event_start),
+                        "error_traceback": result.error_traceback,
+                    }
+                )
                 if result.status == "skipped_existing":
                     execution["resumed_from_existing_outputs"] += 1
         execution["stage_timings_sec"]["frame_select"] = _elapsed_seconds(stage_start)
@@ -159,9 +198,24 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
                     pair.relative_stem,
                     "align",
                 )
+                event_start = perf_counter()
+                started_at = _timestamp_now()
                 result = stage.run(pair, force_retry_failed=force_retry_failed)
+                finished_at = _timestamp_now()
                 counts[result.status] += 1
                 samples.append({"sample_id": result.sample_id, "status": result.status, "message": result.message})
+                stage_events.append(
+                    {
+                        "sample_id": result.sample_id,
+                        "stage": "align",
+                        "status": result.status,
+                        "message": result.message,
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                        "duration_sec": _elapsed_seconds(event_start),
+                        "error_traceback": result.error_traceback,
+                    }
+                )
                 if result.status == "align_skipped_existing":
                     execution["resumed_from_existing_outputs"] += 1
                 elif force_retry_failed and result.status != "align_skipped_existing" and was_failed_before_retry:
@@ -197,9 +251,24 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
                     pair.relative_stem,
                     "color_match",
                 )
+                event_start = perf_counter()
+                started_at = _timestamp_now()
                 result = stage.run(pair, force_retry_failed=force_retry_failed)
+                finished_at = _timestamp_now()
                 counts[result.status] += 1
                 samples.append({"sample_id": result.sample_id, "status": result.status, "message": result.message})
+                stage_events.append(
+                    {
+                        "sample_id": result.sample_id,
+                        "stage": "color_match",
+                        "status": result.status,
+                        "message": result.message,
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                        "duration_sec": _elapsed_seconds(event_start),
+                        "error_traceback": result.error_traceback,
+                    }
+                )
                 if result.status == "color_match_skipped_existing":
                     execution["resumed_from_existing_outputs"] += 1
                 elif force_retry_failed and result.status != "color_match_skipped_existing" and was_failed_before_retry:
@@ -277,6 +346,10 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         summary["export"] = export_summary
     failed_samples_manifest = _write_failed_samples_manifest(config.data.output_dir, samples)
     execution["failed_samples_manifest"] = str(failed_samples_manifest)
+    sample_status_records = build_sample_status_records(pair_dicts=pair_lookup, stage_events=stage_events)
+    sample_status_yaml, sample_status_csv = write_sample_status_files(config.data.output_dir, sample_status_records)
+    execution["sample_status_yaml"] = str(sample_status_yaml)
+    execution["sample_status_csv"] = str(sample_status_csv)
     write_yaml(config.data.output_dir / "run_summary.yaml", summary)
     return summary
 
@@ -337,6 +410,10 @@ def _runtime_config(config: AppConfig) -> dict[str, bool]:
 
 def _elapsed_seconds(start_time: float) -> float:
     return round(perf_counter() - start_time, 6)
+
+
+def _timestamp_now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
 def _was_failed_stage_output(output_dir, relative_stem, stage_name: str) -> bool:
@@ -485,6 +562,10 @@ def _frame_select_worker_entry(
                 "sample_id": result.sample_id,
                 "status": result.status,
                 "message": result.message,
+                "started_at": "",
+                "finished_at": "",
+                "duration_sec": "",
+                "error_traceback": result.error_traceback,
                 "worker_index": worker_index,
                 "worker_pid": os.getpid(),
                 "gpu_id": gpu_id,
