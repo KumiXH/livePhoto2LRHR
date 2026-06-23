@@ -265,92 +265,53 @@ output_dir: /data/livephoto/output
 - 失败清单路径
 - 样本级状态总表路径
 
-重点字段：
-
-```text
-counts
-execution.stage_timings_sec
-execution.total_runtime_sec
-execution.failed_samples_manifest
-execution.sample_status_yaml
-execution.sample_status_csv
-pair_discovery
-samples
-```
-
-示例：
+示例（把最常看的字段直接写上中文注释）：
 
 ```yaml
 counts:
-  success: 2
-  frame_select_failed: 0
-  align_failed: 0
-  color_match_failed: 0
+  success: 2  # 成功走完当前启用阶段、并写出主产物的样本数
+  frame_select_failed: 0  # 阶段一失败样本数：抽帧失败、读图失败、相似度选择失败
+  align_failed: 0  # 阶段二失败样本数：对齐阶段失败
+  color_match_failed: 0  # 阶段三失败样本数：调色阶段失败
 execution:
-  total_runtime_sec: 6.40626
+  total_runtime_sec: 6.40626  # 本次 pipeline 总耗时，单位秒
   stage_timings_sec:
-    frame_select: 6.406018
-  failed_samples_manifest: D:/.../failed_samples.yaml
+    frame_select: 6.406018  # 阶段一整批样本累计耗时，单位秒
+  failed_samples_manifest: D:/.../failed_samples.yaml  # 失败样本清单文件路径
+  sample_status_yaml: D:/.../sample_status.yaml  # 样本级 YAML 状态表路径
+  sample_status_csv: D:/.../sample_status.csv  # 样本级 CSV 状态表路径
+  retry_failed_samples: true  # 是否开启“失败样本优先重试”
+  resumed_from_existing_outputs: true  # 是否复用了已有输出，属于断点续跑的一部分
 pair_discovery:
-  paired: 2
-  missing_images: []
-  missing_videos: []
+  paired: 2  # 成功找到“同名图片 + 视频”的有效配对数量
+  missing_images: []  # 只找到视频、没找到同名图片的 stem 列表
+  missing_videos: []  # 只找到图片、没找到同名视频的 stem 列表
+  ambiguous: []  # 同一 stem 对应多个候选图片或多个候选视频时的歧义项
 samples:
-  - sample_id: IMG_20260623_214945
-    status: success
-    message: ""
+  - sample_id: IMG_20260623_214945  # 样本唯一标识，通常就是相对路径 stem
+    status: success  # 这一条事件记录的结果状态
+    message: ""  # 状态补充信息；成功时通常为空
 ```
 
-字段含义：
+你平时最值得优先看的就是：
 
-- `counts.success`
-  阶段一成功写出 `LR/HR` 的样本数。
-- `counts.frame_select_failed`
-  阶段一抽帧或读图失败的样本数。
-- `counts.align_failed`
-  阶段二对齐失败的样本数。
-- `counts.color_match_failed`
-  阶段三调色失败的样本数。
-- `execution.stage_timings_sec`
-  每个阶段整批总耗时，单位秒。
-- `execution.total_runtime_sec`
-  本次 pipeline 总耗时，单位秒。
-- `execution.failed_samples_manifest`
-  失败样本清单路径。
-- `execution.sample_status_yaml / csv`
-  样本级统一状态表路径。
-- `pair_discovery.paired`
-  成功找到“同名图片 + 视频”的样本对数量。
-- `pair_discovery.missing_images`
-  只有视频、缺图片的样本 stem 列表。
-- `pair_discovery.missing_videos`
-  只有图片、缺视频的样本 stem 列表。
-- `pair_discovery.ambiguous`
-  同一个 stem 下出现多张候选图片或多条候选视频时的歧义列表。
-- `samples`
-  阶段事件流，里面每条记录一个样本在某个阶段的一次结果。
+- `counts`：先看整批成功/失败规模。
+- `execution`：再看总耗时、断点续跑、失败清单、样本状态表路径。
+- `pair_discovery`：确认输入目录里是否真的是“一图一视频”成对齐全。
+- `samples`：这是事件流，不是最终总表；真要排障优先看 `sample_status.yaml / csv`。
 
 ### `failed_samples.yaml`
 
 这是“失败样本清单”，适合快速筛出这轮失败的样本。
 
-示例：
+示例（直接在示例里标注含义）：
 
 ```yaml
 failed_samples:
-  - sample_id: flower
-    status: align_failed
-    message: alignment failed
+  - sample_id: flower  # 失败样本 ID，通常等于输入相对路径 stem
+    status: align_failed  # 失败状态；能一眼看出挂在哪个阶段
+    message: alignment failed  # 失败消息：算法返回原因或 Python 异常摘要
 ```
-
-字段含义：
-
-- `sample_id`
-  样本唯一标识，通常等于输入相对路径 stem。
-- `status`
-  失败所属阶段的失败状态，例如 `frame_select_failed`、`align_failed`、`color_match_failed`。
-- `message`
-  失败消息。通常是算法返回的错误信息，或 Python 异常消息。
 
 ### `sample_status.yaml`
 
@@ -362,46 +323,33 @@ failed_samples:
 - 阶段三状态、消息、开始时间、结束时间、耗时、异常堆栈
 - 最后一个阶段状态
 
-示例：
+示例（这是最适合排障的文件，所以把字段解释尽量贴在示例里）：
 
 ```yaml
 samples:
-  - sample_id: flower
-    source_image: D:/data/flower.jpg
-    source_video: D:/data/flower.mp4
-    frame_select_status: success
-    frame_select_message: ""
-    frame_select_started_at: 2026-06-23T22:50:01+08:00
-    frame_select_finished_at: 2026-06-23T22:50:02+08:00
-    frame_select_duration_sec: 0.842153
-    frame_select_error_traceback: ""
-    align_status: align_failed
-    align_message: alignment failed
-    align_started_at: 2026-06-23T22:50:02+08:00
-    align_finished_at: 2026-06-23T22:50:02+08:00
-    align_duration_sec: 0.107345
-    align_error_traceback: ""
-    color_match_status: color_match_skipped_missing_input
-    color_match_message: missing phase input
-    last_status: color_match_skipped_missing_input
+  - sample_id: flower  # 样本 ID，通常等于相对路径 stem
+    source_image: D:/data/flower.jpg  # 当前样本对应的原始图片路径
+    source_video: D:/data/flower.mp4  # 当前样本对应的原始视频路径
+    frame_select_status: success  # 阶段一最终状态
+    frame_select_message: ""  # 阶段一补充消息；成功时一般为空
+    frame_select_started_at: 2026-06-23T22:50:01+08:00  # 阶段一开始时间（ISO 格式）
+    frame_select_finished_at: 2026-06-23T22:50:02+08:00  # 阶段一结束时间（ISO 格式）
+    frame_select_duration_sec: 0.842153  # 阶段一耗时，单位秒
+    frame_select_error_traceback: ""  # 若是 Python 异常导致失败，这里会写完整堆栈
+    align_status: align_failed  # 阶段二最终状态
+    align_message: alignment failed  # 阶段二失败原因
+    align_started_at: 2026-06-23T22:50:02+08:00  # 阶段二开始时间
+    align_finished_at: 2026-06-23T22:50:02+08:00  # 阶段二结束时间
+    align_duration_sec: 0.107345  # 阶段二耗时，单位秒
+    align_error_traceback: ""  # 若失败来自 Python 异常，这里会有堆栈
+    color_match_status: color_match_skipped_missing_input  # 阶段三状态；这里表示因缺上游输入而跳过
+    color_match_message: missing phase input  # 阶段三补充消息
+    color_match_started_at: ""  # 未真正执行时，开始/结束时间可能为空
+    color_match_finished_at: ""  # 未真正执行时，开始/结束时间可能为空
+    color_match_duration_sec: 0.0  # 跳过时通常是 0 或接近 0
+    color_match_error_traceback: ""  # 跳过或普通失败时可能为空；异常失败时会写堆栈
+    last_status: color_match_skipped_missing_input  # 这个样本最后停留的状态，排障时特别有用
 ```
-
-字段含义：
-
-- `source_image / source_video`
-  当前样本对应的原始输入路径。
-- `frame_select_status / align_status / color_match_status`
-  对应阶段最终状态。
-- `*_message`
-  对应阶段的错误消息、skip 原因或空字符串。
-- `*_started_at / *_finished_at`
-  阶段开始 / 结束时间，ISO 时间格式。
-- `*_duration_sec`
-  该样本在该阶段的耗时，单位秒。
-- `*_error_traceback`
-  如果阶段是 Python 异常导致失败，这里会带完整堆栈；如果是算法正常返回 `failed`，这里可能为空。
-- `last_status`
-  这个样本最后一次阶段事件的状态，适合快速看“最后停在哪一步”。
 
 常见状态解释：
 
@@ -427,13 +375,19 @@ samples:
 - grep / 筛选失败样本
 - 后续做 dashboard
 
-示例表头：
+示例（CSV 本身不支持行内注释，所以把列解释紧贴在示例下面）：
 
 ```text
 sample_id,source_image,source_video,frame_select_status,frame_select_message,frame_select_started_at,frame_select_finished_at,frame_select_duration_sec,frame_select_error_traceback,align_status,align_message,align_started_at,align_finished_at,align_duration_sec,align_error_traceback,color_match_status,color_match_message,color_match_started_at,color_match_finished_at,color_match_duration_sec,color_match_error_traceback,last_status
+# sample_id=样本ID，source_image/source_video=原始输入路径
+# frame_select_* = 阶段一状态/消息/开始时间/结束时间/耗时/异常堆栈
+# align_* = 阶段二状态/消息/开始时间/结束时间/耗时/异常堆栈
+# color_match_* = 阶段三状态/消息/开始时间/结束时间/耗时/异常堆栈
+# last_status = 当前样本最后停留的状态，适合快速筛失败
+flower,D:/data/flower.jpg,D:/data/flower.mp4,success,"",2026-06-23T22:50:01+08:00,2026-06-23T22:50:02+08:00,0.842153,"",align_failed,alignment failed,2026-06-23T22:50:02+08:00,2026-06-23T22:50:02+08:00,0.107345,"",color_match_skipped_missing_input,missing phase input,"","",0.0,"",color_match_skipped_missing_input
 ```
 
-怎么用：
+常见用法：
 
 - 想筛全部失败样本：按 `last_status`、`align_status`、`color_match_status` 过滤。
 - 想看慢样本：按 `frame_select_duration_sec / align_duration_sec / color_match_duration_sec` 排序。
@@ -449,57 +403,32 @@ sample_id,source_image,source_video,frame_select_status,frame_select_message,fra
 
 适合追单样本的算法细节，不适合做批量统计。
 
-示例：
+示例（这份文件主要看算法细节，所以把关键指标直接标在字段旁边）：
 
 ```yaml
 frame_select:
-  algorithm: opencv_similarity
+  algorithm: opencv_similarity  # 阶段一使用的抽帧算法
   selected:
-    frame_index: 0
-    timestamp_sec: 0.0
-    score: 0.0055
+    frame_index: 0  # 选中的视频帧索引
+    timestamp_sec: 0.0  # 选中帧在视频中的时间位置，单位秒
+    score: 0.0055  # 抽帧匹配分数；同一算法下通常越大越好
 align:
-  algorithm: hybrid_feature_flow
-  status: success
-  confidence: 0.8721
+  algorithm: hybrid_feature_flow  # 阶段二使用的对齐算法
+  status: success  # 阶段二状态
+  confidence: 0.8721  # 对齐置信度；越高通常越可靠
   diagnostics:
-    pre_alignment_error: 130.63
-    post_alignment_error: 95.66
-    flow_status: accepted
-    mean_flow_magnitude: 2.25
+    pre_alignment_error: 130.63  # 对齐前误差；通常越小越好
+    post_alignment_error: 95.66  # 对齐后误差；正常应比对齐前更小
+    flow_status: accepted  # 光流细化是否被接受
+    mean_flow_magnitude: 2.25  # 平均光流位移幅度；过大要警惕不稳定
 color_match:
-  algorithm: diffusion_harmonization
-  status: success
-  confidence: 0.5684
+  algorithm: diffusion_harmonization  # 阶段三使用的调色算法
+  status: success  # 阶段三状态
+  confidence: 0.5684  # 调色置信度；越高通常越稳定
   diagnostics:
-    pre_color_error: 8.60
-    post_color_error: 3.71
+    pre_color_error: 8.60  # 调色前颜色误差；通常越小越好
+    post_color_error: 3.71  # 调色后颜色误差；理想情况下应小于调色前
 ```
-
-其中常见指标解释：
-
-- `frame_select.selected.frame_index`
-  选中的视频帧索引。
-- `frame_select.selected.timestamp_sec`
-  选中帧对应视频时间，单位秒。
-- `frame_select.selected.score`
-  抽帧相似度分数。不同算法的绝对值不一定能横向比较，但同一算法下通常越大越好。
-- `align.confidence`
-  对齐阶段给出的置信度。越高通常表示几何更可靠。
-- `diagnostics.pre_alignment_error`
-  对齐前误差。通常越小越好。
-- `diagnostics.post_alignment_error`
-  对齐后误差。通常应该比对齐前更小。
-- `diagnostics.flow_status`
-  光流细化结果，例如 `accepted` / `rejected`。
-- `diagnostics.mean_flow_magnitude`
-  平均光流位移幅度。数值特别大时，往往说明局部运动很强或匹配不稳定。
-- `color_match.confidence`
-  调色阶段置信度。越高通常表示颜色迁移更稳定。
-- `diagnostics.pre_color_error`
-  调色前颜色误差。通常越小越好。
-- `diagnostics.post_color_error`
-  调色后颜色误差。通常应低于调色前。
 
 ### `reports*/quality_report.csv`
 
@@ -509,34 +438,17 @@ color_match:
 - MAE / PSNR / SSIM
 - 尺寸 / 比例 / 边缘伪影
 
-示例列：
+示例（把最关键列的含义直接贴在示例下面）：
 
 ```text
 sample_id,frame_select_score,align_status,align_confidence,flow_status,raw_to_hr_mae,raw_to_hr_psnr,raw_to_hr_ssim,aligned_to_hr_mae,color_matched_to_hr_mae,lr_path,aligned_path,color_matched_path,hr_path
+# sample_id=样本ID，frame_select_score=阶段一抽帧匹配分数
+# align_status/align_confidence/flow_status=阶段二结果、置信度、光流接受状态
+# raw_to_hr_mae=原始LR到HR误差，aligned_to_hr_mae=对齐后LR到HR误差，color_matched_to_hr_mae=调色后LR到HR误差；这三个 MAE 都是越小越好
+# raw_to_hr_psnr/raw_to_hr_ssim 等同类列也是三路指标：PSNR 越大越好，SSIM 越接近 1.0 越好
+# lr_path/aligned_path/color_matched_path/hr_path=对应图像路径，便于你直接回看样本
+flower,0.9351,success,0.8721,accepted,12.44,25.81,0.7712,5.62,3.71,D:/.../LR/flower.png,D:/.../LR_aligned_flow/flower.png,D:/.../LR_color_matched/flower.png,D:/.../HR/flower.jpg
 ```
-
-核心指标解释：
-
-- `raw_to_hr_mae`
-  原始 LR 与 HR 的平均绝对误差。越小越好。
-- `aligned_to_hr_mae`
-  对齐后的 LR 与 HR 的平均绝对误差。越小越好。
-- `color_matched_to_hr_mae`
-  调色后的 LR 与 HR 的平均绝对误差。越小越好。
-- `raw_to_hr_psnr / aligned_to_hr_psnr / color_matched_to_hr_psnr`
-  峰值信噪比。越大越好。
-- `raw_to_hr_ssim / aligned_to_hr_ssim / color_matched_to_hr_ssim`
-  结构相似度。越接近 `1.0` 越好。
-- `*_dimension_match`
-  尺寸是否一致。
-- `*_aspect_ratio_match`
-  长宽比是否一致。
-- `*_border_mae`
-  边缘区域误差，常用来观察裁剪边缘或边框伪影。越小越好。
-- `flow_status`
-  光流细化结果，常见是 `accepted` / `rejected`。
-- `mean_flow_magnitude`
-  平均光流幅度，值过大时要警惕不稳定对齐。
 
 怎么读这个表：
 
@@ -556,29 +468,19 @@ sample_id,frame_select_score,align_status,align_confidence,flow_status,raw_to_hr
 - 哪些样本被拒绝
 - 被拒绝原因是什么
 
-示例：
+示例（这是“最终收样本”的总表，建议直接盯着这几列看）：
 
 ```text
 sample_id,accepted,reason,lr_source,gate_lr_source,final_lr_resize_mode,gate_source_to_hr_mae,final_lr_path,final_hr_path,align_status,align_confidence,flow_status
-IMG_20260614_160134,true,accepted,color_matched,color_matched,0.5,3.7147,...,success,0.8721,accepted
+# accepted=是否进入最终训练集，reason=接受或拒绝原因
+# lr_source=最终写入 LR/ 的来源，可为 raw/aligned/color_matched
+# gate_lr_source=用哪一路图像做质量门槛判断
+# final_lr_resize_mode=最终 LR 导出尺寸策略；0.5 表示按对齐大图缩成 1/2，raw 表示回到原始低清尺寸
+# gate_source_to_hr_mae=用于门槛判断的那一路图像到 HR 的 MAE，越小越好
+# final_lr_path/final_hr_path=最终训练集中的落盘路径
+# align_status/align_confidence/flow_status=最终样本对应的对齐质量背景信息
+IMG_20260614_160134,true,accepted,color_matched,color_matched,0.5,3.7147,D:/.../final/LR/IMG_20260614_160134.png,D:/.../final/HR/IMG_20260614_160134.jpg,success,0.8721,accepted
 ```
-
-字段含义：
-
-- `accepted`
-  是否进入最终训练集。
-- `reason`
-  接受或拒绝原因。
-- `lr_source`
-  最终写入训练集 `LR/` 的来源，可能是 `raw / aligned / color_matched`。
-- `gate_lr_source`
-  用来做质量门槛判断的来源。
-- `final_lr_resize_mode`
-  最终 LR 导出尺寸策略，例如 `copy / raw / match_raw / 0.5`。
-- `gate_source_to_hr_mae`
-  被拿来做门槛判断的那一路图像到 HR 的 MAE。
-- `align_status / align_confidence / flow_status`
-  便于把最终接受情况与对齐质量关联起来看。
 
 `reason` 常见值：
 
