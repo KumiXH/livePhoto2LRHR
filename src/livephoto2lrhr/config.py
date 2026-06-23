@@ -105,7 +105,7 @@ class DataConfig:
     input_dir: Path
     output_dir: Path
     recursive: bool = True
-    image_exts: tuple[str, ...] = (".jpg", ".jpeg", ".png", ".heic")
+    image_exts: tuple[str, ...] = (".jpg", ".jpeg", ".png", ".heic", ".heif")
     video_exts: tuple[str, ...] = (".mp4", ".mov")
     output_ext: str = ".png"
 
@@ -354,7 +354,7 @@ def load_config(path: str | Path) -> AppConfig:
         input_dir=input_dir,
         output_dir=output_dir,
         recursive=bool(data_raw.get("recursive", True)),
-        image_exts=_normalize_exts(data_raw.get("image_exts", [".jpg", ".jpeg", ".png", ".heic"])),
+        image_exts=_normalize_exts(data_raw.get("image_exts", [".jpg", ".jpeg", ".png", ".heic", ".heif"])),
         video_exts=_normalize_exts(data_raw.get("video_exts", [".mp4", ".mov"])),
         output_ext=_normalize_exts([data_raw.get("output_ext", ".png")])[0],
     )

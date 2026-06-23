@@ -6,7 +6,7 @@ data:
   input_dir: D:/SR数据集/花
   output_dir: D:/SR数据集/花_pairs
   recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]
   video_exts: [".mp4", ".mov"]
   output_ext: ".png"
 

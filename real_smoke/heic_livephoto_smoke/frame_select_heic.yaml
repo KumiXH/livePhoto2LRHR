@@ -1,0 +1,27 @@
+task:
+  name: heic_livephoto_frame_select
+  seed: 42
+
+data:
+  input_dir: D:/SR数据集/HEIC_livephoto
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/heic_livephoto_smoke/output
+  recursive: true
+  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]
+  video_exts: [".mp4", ".mov"]
+  output_ext: ".png"
+
+pipeline:
+  stages:
+    - frame_select
+
+frame_select:
+  algorithm: opencv_similarity
+  device: cpu
+  sample_fps: 10
+  top_k: 5
+  batch_size: 8
+  resize_short_side: 512
+
+output:
+  save_metadata: true
+  overwrite: true

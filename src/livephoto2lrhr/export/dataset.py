@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import yaml
 from PIL import Image, ImageOps
+from livephoto2lrhr.data.image_io import open_pil_image
 
 
 @dataclass(frozen=True)
@@ -317,12 +318,12 @@ def _write_final_lr(
         destination.parent.mkdir(parents=True, exist_ok=True)
         Image.fromarray(replayed, mode="RGB").save(destination)
         return
-    with Image.open(source_lr) as source_image:
+    with open_pil_image(source_lr) as source_image:
         source_rgb = ImageOps.exif_transpose(source_image).convert("RGB")
         if resize_mode in {"match_raw", "raw"}:
             if raw_lr is None or not raw_lr.exists():
                 raise ValueError("raw LR source is required for final_lr_resize_mode=match_raw/raw")
-            with Image.open(raw_lr) as raw_image:
+            with open_pil_image(raw_lr) as raw_image:
                 raw_rgb = ImageOps.exif_transpose(raw_image).convert("RGB")
                 target_size = raw_rgb.size
         elif resize_mode in {"1.0", "0.75", "0.5"}:
@@ -353,9 +354,9 @@ def _replay_source_to_low_res(
         return None
     if source_lr == raw_lr:
         return None
-    with Image.open(raw_lr) as raw_image:
+    with open_pil_image(raw_lr) as raw_image:
         raw_rgb = np.asarray(ImageOps.exif_transpose(raw_image).convert("RGB"))
-    with Image.open(hr_path) as hr_image:
+    with open_pil_image(hr_path) as hr_image:
         hr_rgb = np.asarray(ImageOps.exif_transpose(hr_image).convert("RGB"))
     replayed = _apply_alignment_replay(raw_rgb=raw_rgb, hr_rgb=hr_rgb, metadata=metadata)
     color_matched_path = _metadata_color_matched_path(metadata)
@@ -636,7 +637,7 @@ def _replay_reference_color_transfer(image_rgb: np.ndarray, metadata: dict[str, 
     reference_path = Path(str(replay_reference_path))
     if not reference_path.exists():
         return None
-    with Image.open(reference_path) as reference_image:
+    with open_pil_image(reference_path) as reference_image:
         reference_rgb = np.asarray(ImageOps.exif_transpose(reference_image).convert("RGB"))
     return cv2.resize(
         reference_rgb,

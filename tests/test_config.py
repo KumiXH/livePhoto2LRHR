@@ -36,7 +36,7 @@ def test_load_config_resolves_paths_and_defaults(tmp_path: Path):
     assert config.data.input_dir == input_dir.resolve()
     assert config.data.output_dir == output_dir.resolve()
     assert config.data.recursive is True
-    assert config.data.image_exts == (".jpg", ".jpeg", ".png", ".heic")
+    assert config.data.image_exts == (".jpg", ".jpeg", ".png", ".heic", ".heif")
     assert config.data.video_exts == (".mp4", ".mov")
     assert config.pipeline.stages == ("frame_select",)
     assert config.frame_select.algorithm == "fake_selector"

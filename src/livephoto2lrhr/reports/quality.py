@@ -9,6 +9,7 @@ import numpy as np
 import yaml
 from PIL import Image, ImageDraw
 
+from livephoto2lrhr.data.image_io import open_pil_image
 from livephoto2lrhr.data.io import output_image_path, read_rgb_array
 from livephoto2lrhr.reports.metrics import branch_metrics_to_hr
 
@@ -256,7 +257,7 @@ def _thumbnail(path: Path, size: int) -> Image.Image:
     canvas = Image.new("RGB", (size, size), (235, 235, 235))
     if not path.exists():
         return canvas
-    with Image.open(path) as source:
+    with open_pil_image(path) as source:
         image = source.convert("RGB")
         image.thumbnail((size, size))
         x = (size - image.width) // 2

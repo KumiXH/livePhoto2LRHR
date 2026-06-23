@@ -7,6 +7,7 @@ import yaml
 from PIL import Image, ImageOps
 
 from livephoto2lrhr.algorithms.similarity.base import FrameCandidate
+from livephoto2lrhr.data.image_io import open_pil_image
 
 
 def output_image_path(output_dir: Path, folder: str, relative_stem: Path, output_ext: str) -> Path:
@@ -23,14 +24,14 @@ def metadata_path(output_dir: Path, relative_stem: Path) -> Path:
 
 
 def read_rgb_array(path: Path) -> np.ndarray:
-    with Image.open(path) as source_image:
+    with open_pil_image(path) as source_image:
         image = ImageOps.exif_transpose(source_image).convert("RGB")
         return np.asarray(image)
 
 
 def save_pil_image(source_path: Path, destination_path: Path) -> None:
     destination_path.parent.mkdir(parents=True, exist_ok=True)
-    with Image.open(source_path) as source_image:
+    with open_pil_image(source_path) as source_image:
         image = ImageOps.exif_transpose(source_image).convert("RGB")
         image.save(destination_path)
 

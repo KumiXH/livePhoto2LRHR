@@ -9,7 +9,7 @@ data:
   input_dir: /path/to/input
   output_dir: /path/to/output
   recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
+  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]
   video_exts: [".mp4", ".mov"]
   output_ext: ".png"
 

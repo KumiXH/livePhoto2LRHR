@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from livephoto2lrhr.algorithms.similarity.base import FrameCandidate, FrameSelectionResult
+from livephoto2lrhr.data.image_io import open_pil_image
 from livephoto2lrhr.utils.device import resolve_device
 
 
@@ -58,7 +59,7 @@ class DINOv2SimilaritySelector:
         self.model = self.torch.hub.load("facebookresearch/dinov2", self.model_name).eval().to(self.device)
 
     def select(self, image_path: Path, video_path: Path) -> FrameSelectionResult:
-        with Image.open(image_path) as image:
+        with open_pil_image(image_path) as image:
             target_image = ImageOps.exif_transpose(image).convert("RGB")
             target_feature = self._extract_feature(target_image)
 

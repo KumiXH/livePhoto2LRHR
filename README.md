@@ -143,6 +143,18 @@ input/trip/IMG_0001.jpg
 input/trip/IMG_0001.mp4
 ```
 
+当前图片扩展默认支持：
+
+```text
+.jpg
+.jpeg
+.png
+.heic
+.heif
+```
+
+如果你要读取 `.heic / .heif`，项目当前通过 `pillow-heif` 接入 Pillow 解码支持。只要按当前安装方式安装依赖即可，不需要额外手工转码图片。
+
 ## 输出约定
 
 工程会尽量保持 `LR` / `HR` 镜像目录结构一致，方便后续 compare 和训练：

@@ -179,6 +179,25 @@ input/
     IMG_0002.mp4
 ```
 
+当前默认图片扩展支持：
+
+```text
+.jpg
+.jpeg
+.png
+.heic
+.heif
+```
+
+其中 `.heic / .heif` 当前通过 `pillow-heif` 解码接入，不需要在进入 pipeline 前先手工转成 `.jpg` 或 `.png`。
+
+如果你想直接参考已经跑通过的 HEIC 真实 smoke，可以看：
+
+```text
+real_smoke/heic_livephoto_smoke/frame_select_heic.yaml
+real_smoke/heic_livephoto_smoke/output/
+```
+
 工程会生成镜像结构输出：
 
 ```text

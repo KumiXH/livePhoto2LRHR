@@ -21,3 +21,6 @@
 # GPU-enabled PyTorch for DINOv2 and CUDA execution.
 torch==2.7.0
 torchvision==0.22.0
+
+# HEIC / HEIF image decoding.
+pillow-heif>=0.16.0

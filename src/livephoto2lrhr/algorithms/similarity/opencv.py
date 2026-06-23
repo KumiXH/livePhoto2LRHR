@@ -5,9 +5,10 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageOps
 
 from livephoto2lrhr.algorithms.similarity.base import FrameCandidate, FrameSelectionResult
+from livephoto2lrhr.data.image_io import open_pil_image
+from PIL import ImageOps
 
 
 class OpenCVSimilaritySelector:
@@ -21,7 +22,7 @@ class OpenCVSimilaritySelector:
         self._validate_config()
 
     def select(self, image_path: Path, video_path: Path) -> FrameSelectionResult:
-        with Image.open(image_path) as image:
+        with open_pil_image(image_path) as image:
             target = np.array(ImageOps.exif_transpose(image).convert("RGB"))
         target_small = self._resize_for_score(target)
         target_gray = cv2.cvtColor(target_small, cv2.COLOR_RGB2GRAY)
