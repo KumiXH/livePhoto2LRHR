@@ -42,6 +42,8 @@ KNOWN_COLOR_MATCH_STATUSES = (
     "color_match_write_failed",
 )
 
+PARALLEL_STAGE_NAMES = ("frame_select", "align", "color_match")
+
 
 def run_pipeline(config: AppConfig) -> dict[str, Any]:
     start_time = perf_counter()
@@ -80,21 +82,28 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
             "worker_assignments": _build_worker_assignments(runtime["parallel"]),
             "used_workers": 0,
             "worker_pids": [],
+            "stages": {
+                stage_name: {
+                    "enabled": False,
+                    "used_workers": 0,
+                    "worker_pids": [],
+                }
+                for stage_name in PARALLEL_STAGE_NAMES
+            },
         },
     }
     execution["parallel"]["enabled"] = _parallel_enabled(config, runtime)
-    execution["parallel"]["used_workers"] = (
-        len(execution["parallel"]["worker_assignments"]) if execution["parallel"]["enabled"] else 0
-    )
 
     if "frame_select" in config.pipeline.stages:
         stage_start = perf_counter()
-        if execution["parallel"]["enabled"]:
+        if _parallel_enabled_for_stage("frame_select", config, runtime):
             frame_select_results = _run_parallel_frame_select(config, pair_result.pairs, runtime["parallel"])
-            execution["parallel"]["worker_pids"] = sorted(
+            worker_pids = sorted(
                 {result["worker_pid"] for result in frame_select_results if result.get("worker_pid")}
             )
-            execution["parallel"]["used_workers"] = len(execution["parallel"]["worker_pids"])
+            execution["parallel"]["stages"]["frame_select"]["enabled"] = True
+            execution["parallel"]["stages"]["frame_select"]["worker_pids"] = worker_pids
+            execution["parallel"]["stages"]["frame_select"]["used_workers"] = len(worker_pids)
             for result in frame_select_results:
                 counts[result["status"]] += 1
                 samples.append(
@@ -166,6 +175,31 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         stage_start = perf_counter()
         if not config.align.enabled:
             counts["align_skipped_disabled"] += len(pair_result.pairs)
+        elif _parallel_enabled_for_stage("align", config, runtime):
+            align_results = _run_parallel_align(config, pair_result.pairs, runtime["parallel"], runtime["retry_failed_samples"])
+            worker_pids = sorted({result["worker_pid"] for result in align_results if result.get("worker_pid")})
+            execution["parallel"]["stages"]["align"]["enabled"] = True
+            execution["parallel"]["stages"]["align"]["worker_pids"] = worker_pids
+            execution["parallel"]["stages"]["align"]["used_workers"] = len(worker_pids)
+            for result in align_results:
+                counts[result["status"]] += 1
+                samples.append({"sample_id": result["sample_id"], "status": result["status"], "message": result["message"]})
+                stage_events.append(
+                    {
+                        "sample_id": result["sample_id"],
+                        "stage": "align",
+                        "status": result["status"],
+                        "message": result["message"],
+                        "started_at": result.get("started_at", ""),
+                        "finished_at": result.get("finished_at", ""),
+                        "duration_sec": result.get("duration_sec", ""),
+                        "error_traceback": result.get("error_traceback", ""),
+                    }
+                )
+                if result.get("resumed_from_existing"):
+                    execution["resumed_from_existing_outputs"] += 1
+                if result.get("retried_failed_before"):
+                    execution["retried_failed_samples"] += 1
         else:
             registry = build_alignment_registry()
             aligner_config = _alignment_algorithm_config(config)
@@ -226,6 +260,36 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         stage_start = perf_counter()
         if not config.color_match.enabled:
             counts["color_match_skipped_disabled"] += len(pair_result.pairs)
+        elif _parallel_enabled_for_stage("color_match", config, runtime):
+            color_match_results = _run_parallel_color_match(
+                config,
+                pair_result.pairs,
+                runtime["parallel"],
+                runtime["retry_failed_samples"],
+            )
+            worker_pids = sorted({result["worker_pid"] for result in color_match_results if result.get("worker_pid")})
+            execution["parallel"]["stages"]["color_match"]["enabled"] = True
+            execution["parallel"]["stages"]["color_match"]["worker_pids"] = worker_pids
+            execution["parallel"]["stages"]["color_match"]["used_workers"] = len(worker_pids)
+            for result in color_match_results:
+                counts[result["status"]] += 1
+                samples.append({"sample_id": result["sample_id"], "status": result["status"], "message": result["message"]})
+                stage_events.append(
+                    {
+                        "sample_id": result["sample_id"],
+                        "stage": "color_match",
+                        "status": result["status"],
+                        "message": result["message"],
+                        "started_at": result.get("started_at", ""),
+                        "finished_at": result.get("finished_at", ""),
+                        "duration_sec": result.get("duration_sec", ""),
+                        "error_traceback": result.get("error_traceback", ""),
+                    }
+                )
+                if result.get("resumed_from_existing"):
+                    execution["resumed_from_existing_outputs"] += 1
+                if result.get("retried_failed_before"):
+                    execution["retried_failed_samples"] += 1
         else:
             registry = build_color_match_registry()
             matcher_config = _color_match_algorithm_config(config)
@@ -274,6 +338,16 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
                 elif force_retry_failed and result.status != "color_match_skipped_existing" and was_failed_before_retry:
                     execution["retried_failed_samples"] += 1
         execution["stage_timings_sec"]["color_match"] = _elapsed_seconds(stage_start)
+
+    all_parallel_worker_pids = sorted(
+        {
+            pid
+            for stage_info in execution["parallel"]["stages"].values()
+            for pid in stage_info["worker_pids"]
+        }
+    )
+    execution["parallel"]["worker_pids"] = all_parallel_worker_pids
+    execution["parallel"]["used_workers"] = len(all_parallel_worker_pids)
 
     report_summary: dict[str, Any] | None = None
     if config.report.enabled:
@@ -461,7 +535,19 @@ def _build_worker_assignments(parallel_runtime: dict[str, Any]) -> list[dict[str
 
 
 def _parallel_enabled(config: AppConfig, runtime: dict[str, Any]) -> bool:
-    return "frame_select" in config.pipeline.stages and int(runtime["parallel"]["num_workers"]) > 1
+    return any(_parallel_enabled_for_stage(stage_name, config, runtime) for stage_name in PARALLEL_STAGE_NAMES)
+
+
+def _parallel_enabled_for_stage(stage_name: str, config: AppConfig, runtime: dict[str, Any]) -> bool:
+    if int(runtime["parallel"]["num_workers"]) <= 1:
+        return False
+    if stage_name not in config.pipeline.stages:
+        return False
+    if stage_name == "align":
+        return config.align.enabled
+    if stage_name == "color_match":
+        return config.color_match.enabled
+    return stage_name == "frame_select"
 
 
 def _run_parallel_frame_select(
@@ -480,6 +566,65 @@ def _run_parallel_frame_select(
                 executor.submit(
                     _frame_select_worker_entry,
                     _frame_select_worker_config(config),
+                    [sample_pair_to_dict(pair) for pair in chunk],
+                    assignment["worker_index"],
+                    assignment["gpu_id"],
+                )
+            )
+        for future in futures:
+            results.extend(future.result())
+    return results
+
+
+def _run_parallel_align(
+    config: AppConfig,
+    pairs: list[SamplePair],
+    parallel_runtime: dict[str, Any],
+    retry_failed_samples: bool,
+) -> list[dict[str, Any]]:
+    return _run_parallel_stage(
+        config=config,
+        pairs=pairs,
+        parallel_runtime=parallel_runtime,
+        worker_entry=_align_worker_entry,
+        worker_config=_align_worker_config(config, retry_failed_samples),
+    )
+
+
+def _run_parallel_color_match(
+    config: AppConfig,
+    pairs: list[SamplePair],
+    parallel_runtime: dict[str, Any],
+    retry_failed_samples: bool,
+) -> list[dict[str, Any]]:
+    return _run_parallel_stage(
+        config=config,
+        pairs=pairs,
+        parallel_runtime=parallel_runtime,
+        worker_entry=_color_match_worker_entry,
+        worker_config=_color_match_worker_config(config, retry_failed_samples),
+    )
+
+
+def _run_parallel_stage(
+    *,
+    config: AppConfig,
+    pairs: list[SamplePair],
+    parallel_runtime: dict[str, Any],
+    worker_entry,
+    worker_config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    chunks = _chunk_pairs(pairs, max(int(parallel_runtime["num_workers"]), 1))
+    assignments = _build_worker_assignments(parallel_runtime)
+    futures = []
+    results: list[dict[str, Any]] = []
+    with ProcessPoolExecutor(max_workers=len(chunks)) as executor:
+        for worker_index, chunk in enumerate(chunks):
+            assignment = assignments[worker_index]
+            futures.append(
+                executor.submit(
+                    worker_entry,
+                    worker_config,
                     [sample_pair_to_dict(pair) for pair in chunk],
                     assignment["worker_index"],
                     assignment["gpu_id"],
@@ -574,6 +719,138 @@ def _frame_select_worker_entry(
     return results
 
 
+def _align_worker_entry(
+    worker_config: dict[str, Any],
+    pair_dicts: list[dict[str, str]],
+    worker_index: int,
+    gpu_id: str,
+) -> list[dict[str, Any]]:
+    if gpu_id:
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
+    from pathlib import Path
+
+    from livephoto2lrhr.algorithms.alignment import build_alignment_registry
+    from livephoto2lrhr.data.pairing import SamplePair
+    from livephoto2lrhr.stages.align import AlignStage
+
+    registry = build_alignment_registry()
+    align_raw = dict(worker_config["align"])
+    aligner_config = align_raw["algorithm_config"]
+    aligner = registry.create(str(align_raw["algorithm"]), aligner_config)
+    fallback_aligner = None
+    fallback_config = None
+    if align_raw.get("fallback_algorithm") and align_raw["fallback_algorithm"] != align_raw["algorithm"]:
+        fallback_config = align_raw["fallback_algorithm_config"]
+        fallback_aligner = registry.create(str(align_raw["fallback_algorithm"]), fallback_config)
+    stage = AlignStage(
+        output_dir=Path(str(worker_config["output_dir"])),
+        output_ext=str(worker_config["output_ext"]),
+        output_folder=str(align_raw["output_folder"]),
+        overwrite=bool(worker_config["overwrite"]),
+        save_metadata=bool(worker_config["save_metadata"]),
+        aligner=aligner,
+        algorithm_name=str(align_raw["algorithm"]),
+        algorithm_config=aligner_config,
+        fallback_aligner=fallback_aligner,
+        fallback_algorithm_name=align_raw.get("fallback_algorithm"),
+        fallback_algorithm_config=fallback_config,
+        confidence_threshold=float(align_raw["confidence_threshold"]),
+        on_failure=str(align_raw["on_failure"]),
+        device=str(align_raw["device"]),
+    )
+    retry_failed_samples = bool(worker_config["retry_failed_samples"])
+    output_dir = Path(str(worker_config["output_dir"]))
+    results: list[dict[str, Any]] = []
+    for pair_dict in pair_dicts:
+        pair = sample_pair_from_dict(pair_dict)
+        was_failed_before_retry = _was_failed_stage_output(output_dir, pair.relative_stem, "align")
+        event_start = perf_counter()
+        started_at = _timestamp_now()
+        result = stage.run(pair, force_retry_failed=retry_failed_samples)
+        finished_at = _timestamp_now()
+        results.append(
+            {
+                "sample_id": result.sample_id,
+                "status": result.status,
+                "message": result.message,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "duration_sec": _elapsed_seconds(event_start),
+                "error_traceback": result.error_traceback,
+                "worker_index": worker_index,
+                "worker_pid": os.getpid(),
+                "gpu_id": gpu_id,
+                "resumed_from_existing": result.status == "align_skipped_existing",
+                "retried_failed_before": (
+                    retry_failed_samples and result.status != "align_skipped_existing" and was_failed_before_retry
+                ),
+            }
+        )
+    return results
+
+
+def _color_match_worker_entry(
+    worker_config: dict[str, Any],
+    pair_dicts: list[dict[str, str]],
+    worker_index: int,
+    gpu_id: str,
+) -> list[dict[str, Any]]:
+    if gpu_id:
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
+    from pathlib import Path
+
+    from livephoto2lrhr.algorithms.color_match import build_color_match_registry
+    from livephoto2lrhr.data.pairing import SamplePair
+    from livephoto2lrhr.stages.color_match import ColorMatchStage
+
+    registry = build_color_match_registry()
+    color_raw = dict(worker_config["color_match"])
+    matcher = registry.create(str(color_raw["algorithm"]), color_raw["algorithm_config"])
+    stage = ColorMatchStage(
+        output_dir=Path(str(worker_config["output_dir"])),
+        output_ext=str(worker_config["output_ext"]),
+        input_folder=str(color_raw["input_folder"]),
+        output_folder=str(color_raw["output_folder"]),
+        overwrite=bool(worker_config["overwrite"]),
+        save_metadata=bool(worker_config["save_metadata"]),
+        matcher=matcher,
+        algorithm_name=str(color_raw["algorithm"]),
+        algorithm_config=color_raw["algorithm_config"],
+        confidence_threshold=float(color_raw["confidence_threshold"]),
+        on_failure=str(color_raw["on_failure"]),
+        device=str(color_raw["device"]),
+    )
+    retry_failed_samples = bool(worker_config["retry_failed_samples"])
+    output_dir = Path(str(worker_config["output_dir"]))
+    results: list[dict[str, Any]] = []
+    for pair_dict in pair_dicts:
+        pair = sample_pair_from_dict(pair_dict)
+        was_failed_before_retry = _was_failed_stage_output(output_dir, pair.relative_stem, "color_match")
+        event_start = perf_counter()
+        started_at = _timestamp_now()
+        result = stage.run(pair, force_retry_failed=retry_failed_samples)
+        finished_at = _timestamp_now()
+        results.append(
+            {
+                "sample_id": result.sample_id,
+                "status": result.status,
+                "message": result.message,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "duration_sec": _elapsed_seconds(event_start),
+                "error_traceback": result.error_traceback,
+                "worker_index": worker_index,
+                "worker_pid": os.getpid(),
+                "gpu_id": gpu_id,
+                "resumed_from_existing": result.status == "color_match_skipped_existing",
+                "retried_failed_before": (
+                    retry_failed_samples and result.status != "color_match_skipped_existing" and was_failed_before_retry
+                ),
+            }
+        )
+    return results
+
+
 def _frame_select_worker_config(config: AppConfig) -> dict[str, Any]:
     return {
         "output_dir": str(config.data.output_dir),
@@ -590,3 +867,51 @@ def _frame_select_worker_config(config: AppConfig) -> dict[str, Any]:
             "device": config.frame_select.device,
         },
     }
+
+
+def _align_worker_config(config: AppConfig, retry_failed_samples: bool) -> dict[str, Any]:
+    return {
+        "output_dir": str(config.data.output_dir),
+        "output_ext": config.data.output_ext,
+        "overwrite": config.output.overwrite,
+        "save_metadata": config.output.save_metadata,
+        "retry_failed_samples": retry_failed_samples,
+        "align": {
+            "algorithm": config.align.algorithm,
+            "algorithm_config": _alignment_algorithm_config(config),
+            "fallback_algorithm": config.align.fallback_algorithm,
+            "fallback_algorithm_config": _alignment_algorithm_config(config),
+            "output_folder": config.align.output_folder,
+            "confidence_threshold": config.align.confidence_threshold,
+            "on_failure": config.align.on_failure,
+            "device": config.align.device,
+        },
+    }
+
+
+def _color_match_worker_config(config: AppConfig, retry_failed_samples: bool) -> dict[str, Any]:
+    return {
+        "output_dir": str(config.data.output_dir),
+        "output_ext": config.data.output_ext,
+        "overwrite": config.output.overwrite,
+        "save_metadata": config.output.save_metadata,
+        "retry_failed_samples": retry_failed_samples,
+        "color_match": {
+            "algorithm": config.color_match.algorithm,
+            "algorithm_config": _color_match_algorithm_config(config),
+            "input_folder": config.color_match.input_folder,
+            "output_folder": config.color_match.output_folder,
+            "confidence_threshold": config.color_match.confidence_threshold,
+            "on_failure": config.color_match.on_failure,
+            "device": config.color_match.device,
+        },
+    }
+
+
+def sample_pair_from_dict(pair_dict: dict[str, str]) -> SamplePair:
+    return SamplePair(
+        sample_id=pair_dict["sample_id"],
+        image_path=Path(pair_dict["image_path"]),
+        video_path=Path(pair_dict["video_path"]),
+        relative_stem=Path(pair_dict["relative_stem"]),
+    )

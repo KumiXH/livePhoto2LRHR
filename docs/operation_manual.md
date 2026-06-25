@@ -135,6 +135,11 @@ image + mp4
 | `image_adaptive_3d_lut_color_match` | `real_smoke/livephoto_color_five_backends/adaptive_3d_lut.yaml` | 否 | 否 | 是 | 当前黄金案例之一。整条案例链路使用 `opencv_similarity + hybrid_feature_flow + image_adaptive_3d_lut_color_match`。 |
 | `diffusion_harmonization` | `real_smoke/livephoto_color_five_backends/diffusion_harmonization.yaml` | 否 | 否 | 是 | 当前黄金案例之一。整条案例链路使用 `opencv_similarity + hybrid_feature_flow + diffusion_harmonization`。 |
 
+如果你要直接跑 HEIC 数据，也可以优先用这两份真实黄金案例：
+
+- `real_smoke/heic_livephoto_golden/adaptive_3d_lut_heic.yaml`
+- `real_smoke/heic_livephoto_golden/diffusion_harmonization_heic.yaml`
+
 补充说明：
 
 - 这里说的“需要额外模型文件”，指的是需要单独的 `pth / ckpt / safetensors` 一类权重。
@@ -165,6 +170,64 @@ python -m pytest -q
 ```
 
 在 Linux 上也使用同样的命令即可。如果你要使用 CUDA，请先安装与你 CUDA 驱动匹配的 PyTorch，再安装本项目。
+
+## 2.4 并行运行说明
+
+当前工程已经支持三阶段样本级并行：
+
+- `frame_select`
+- `align`
+- `color_match`
+
+这里的并行模型是“阶段内样本级多进程并行”，不是流式流水线。也就是：
+
+1. 先并行完成阶段一
+2. 再并行完成阶段二
+3. 再并行完成阶段三
+
+配置方式：
+
+```yaml
+runtime:
+  retry_failed_samples: true
+  parallel:
+    num_workers: 8
+    gpu_ids: []
+```
+
+说明：
+
+- `num_workers`
+  worker 数量；建议 `>= 1`
+- `gpu_ids`
+  GPU ID 列表；如果当前方案主要是 CPU classical 后端，可以保留空列表
+
+命令行也支持直接覆盖：
+
+```bash
+livephoto2lrhr --config your_config.yaml --num-workers 8
+```
+
+如果你还想显式传 GPU 列表：
+
+```bash
+livephoto2lrhr --config your_config.yaml --num-workers 8 --gpu-ids 0 1 2 3 4 5 6 7
+```
+
+运行结束后，可以在 `run_summary.yaml` 里看到并行统计：
+
+- `execution.parallel.enabled`
+- `execution.parallel.requested_workers`
+- `execution.parallel.used_workers`
+- `execution.parallel.worker_pids`
+- `execution.parallel.stages.frame_select`
+- `execution.parallel.stages.align`
+- `execution.parallel.stages.color_match`
+
+补充：
+
+- 如果样本数少于 worker 数，例如只有 6 个样本、你开了 8 个 worker，那么每阶段实际只会使用 6 个 worker，这是正常行为。
+- 当前 HEIC 黄金案例默认是 CPU classical 路线，因此在服务器上提升吞吐的主要手段是提高 `num_workers`，而不是依赖 GPU。
 
 ## 3. 输入目录组织
 

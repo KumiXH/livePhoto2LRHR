@@ -122,22 +122,42 @@ runtime:
 - CLI 覆盖 `--num-workers`
 - CLI 覆盖 `--gpu-ids`
 - `run_summary.yaml` 中记录 worker 规划和 GPU 分配
-- `frame_select` 场景下把“并行模式已启用”明确写入 summary
-- `frame_select` 已经支持真实多进程分片执行
+- `frame_select` / `align` / `color_match` 三个阶段都把“并行模式已启用”明确写入 summary
+- `frame_select` / `align` / `color_match` 都已经支持样本级多进程分片执行
 
-当前真实并行执行的范围先限定在 `frame_select`。也就是：
+当前真实并行执行范围是：
 
 - 阶段一：已支持多 worker 真并发
-- 阶段二：当前仍是主进程串行
-- 阶段三：当前仍是主进程串行
+- 阶段二：已支持样本级多 worker 真并发
+- 阶段三：已支持样本级多 worker 真并发
 
-这样做是为了先把最重、最独立的抽帧阶段稳定跑在多卡服务器上，再逐步把对齐和调色接入并发链。
+这里的“并行”指的是阶段内样本级并行：
+
+- 先完成整个 `frame_select`
+- 再并行完成整个 `align`
+- 最后并行完成整个 `color_match`
+
+当前还不是“某个样本刚对齐完就立刻流进调色”的流水线调度，而是更稳的阶段式批处理并行。
 
 命令行也可以直接覆盖：
 
 ```bash
 livephoto2lrhr --config configs/full_pipeline_template.yaml --num-workers 8 --gpu-ids 0 1 2 3 4 5 6 7
 ```
+
+如果你要直接跑 HEIC 黄金案例，并开启样本级并行，可以这样：
+
+```bash
+livephoto2lrhr --config real_smoke/heic_livephoto_golden/adaptive_3d_lut_heic.yaml --num-workers 8
+```
+
+或者：
+
+```bash
+livephoto2lrhr --config real_smoke/heic_livephoto_golden/diffusion_harmonization_heic.yaml --num-workers 8
+```
+
+如果你当前这套黄金案例主要走 CPU classical 后端，那么 `--num-workers` 往往比 `--gpu-ids` 更关键，因为阶段二/三的收益主要来自多核并行。
 
 ## 输入约定
 

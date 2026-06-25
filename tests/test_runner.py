@@ -552,3 +552,99 @@ def test_run_pipeline_parallel_frame_select_uses_multiple_processes(tmp_path: Pa
     assert len(summary["execution"]["parallel"]["worker_pids"]) == 2
     assert (output_dir / "LR" / "flower_a.png").exists()
     assert (output_dir / "LR" / "flower_b.png").exists()
+
+
+def test_run_pipeline_parallel_align_uses_multiple_processes(tmp_path: Path):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    output_dir = tmp_path / "output"
+    for name, lr_value, hr_value in (("flower_a", 10, 20), ("flower_b", 30, 40)):
+        (input_dir / f"{name}.jpg").write_bytes(b"x")
+        (input_dir / f"{name}.mp4").write_bytes(b"x")
+        relative_stem = Path(name)
+        lr_path = output_image_path(output_dir, "LR", relative_stem, ".png")
+        hr_path = output_image_path(output_dir, "HR", relative_stem, ".png")
+        save_rgb_array(np.full((4, 5, 3), lr_value, dtype=np.uint8), lr_path)
+        save_rgb_array(np.full((8, 10, 3), hr_value, dtype=np.uint8), hr_path)
+        write_yaml(
+            output_dir / "metadata" / f"{name}.yaml",
+            {
+                "sample_id": name,
+                "output": {"lr": str(lr_path), "hr": str(hr_path)},
+                "status": {"aligned": False, "color_matched": False},
+            },
+        )
+    config = AppConfig(
+        data=DataConfig(input_dir=input_dir, output_dir=output_dir, image_exts=(".jpg",), video_exts=(".mp4",)),
+        pipeline=PipelineConfig(stages=("align",)),
+        frame_select=FrameSelectConfig(algorithm="fake_selector", top_k=1),
+        output=OutputConfig(save_metadata=True, overwrite=False),
+        raw={
+            "test": True,
+            "runtime": {
+                "parallel": {
+                    "num_workers": 2,
+                }
+            },
+        },
+        align=AlignConfig(enabled=True, algorithm="identity_alignment"),
+    )
+
+    summary = run_pipeline(config)
+
+    assert summary["counts"]["align_success"] == 2
+    assert summary["execution"]["parallel"]["enabled"] is True
+    assert summary["execution"]["parallel"]["stages"]["align"]["enabled"] is True
+    assert summary["execution"]["parallel"]["stages"]["align"]["used_workers"] == 2
+    assert len(summary["execution"]["parallel"]["stages"]["align"]["worker_pids"]) == 2
+    assert (output_dir / "LR_aligned" / "flower_a.png").exists()
+    assert (output_dir / "LR_aligned" / "flower_b.png").exists()
+
+
+def test_run_pipeline_parallel_color_match_uses_multiple_processes(tmp_path: Path):
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    output_dir = tmp_path / "output"
+    for name, lr_value, aligned_value, hr_value in (("flower_a", 10, 11, 20), ("flower_b", 30, 31, 40)):
+        (input_dir / f"{name}.jpg").write_bytes(b"x")
+        (input_dir / f"{name}.mp4").write_bytes(b"x")
+        relative_stem = Path(name)
+        lr_path = output_image_path(output_dir, "LR", relative_stem, ".png")
+        aligned_path = output_image_path(output_dir, "LR_aligned", relative_stem, ".png")
+        hr_path = output_image_path(output_dir, "HR", relative_stem, ".png")
+        save_rgb_array(np.full((4, 5, 3), lr_value, dtype=np.uint8), lr_path)
+        save_rgb_array(np.full((4, 5, 3), aligned_value, dtype=np.uint8), aligned_path)
+        save_rgb_array(np.full((8, 10, 3), hr_value, dtype=np.uint8), hr_path)
+        write_yaml(
+            output_dir / "metadata" / f"{name}.yaml",
+            {
+                "sample_id": name,
+                "output": {"lr": str(lr_path), "lr_aligned": str(aligned_path), "hr": str(hr_path)},
+                "status": {"aligned": True, "color_matched": False},
+            },
+        )
+    config = AppConfig(
+        data=DataConfig(input_dir=input_dir, output_dir=output_dir, image_exts=(".jpg",), video_exts=(".mp4",)),
+        pipeline=PipelineConfig(stages=("color_match",)),
+        frame_select=FrameSelectConfig(algorithm="fake_selector", top_k=1),
+        output=OutputConfig(save_metadata=True, overwrite=False),
+        raw={
+            "test": True,
+            "runtime": {
+                "parallel": {
+                    "num_workers": 2,
+                }
+            },
+        },
+        color_match=ColorMatchConfig(enabled=True, algorithm="identity_color_match"),
+    )
+
+    summary = run_pipeline(config)
+
+    assert summary["counts"]["color_match_success"] == 2
+    assert summary["execution"]["parallel"]["enabled"] is True
+    assert summary["execution"]["parallel"]["stages"]["color_match"]["enabled"] is True
+    assert summary["execution"]["parallel"]["stages"]["color_match"]["used_workers"] == 2
+    assert len(summary["execution"]["parallel"]["stages"]["color_match"]["worker_pids"]) == 2
+    assert (output_dir / "LR_color_matched" / "flower_a.png").exists()
+    assert (output_dir / "LR_color_matched" / "flower_b.png").exists()
