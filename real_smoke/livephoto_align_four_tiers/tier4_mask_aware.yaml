@@ -1,57 +1,57 @@
-task:
-  name: livephoto_align_tier4_mask_aware
-  seed: 42
+task:  # 任务级配置：定义这次运行的名称和可复现随机种子
+  name: livephoto_align_tier4_mask_aware  # 任务名，会写入 run_summary，方便区分这次跑的是哪套对齐档位
+  seed: 42  # 随机种子；建议为整数，改了之后会影响带随机性的流程复现结果
 
-data:
-  input_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_align_four_tiers/input
-  output_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_align_four_tiers/output_tier4_mask_aware
-  recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
-  video_exts: [".mp4", ".mov"]
-  output_ext: ".png"
+data:  # 输入输出数据配置
+  input_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_align_four_tiers/input  # 输入数据根目录：按“同名图片 + 同名视频”自动配对；这里是四档对齐样例输入
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/livephoto_align_four_tiers/output_tier4_mask_aware  # 本次运行的总输出目录；这里是第四档 mask-aware 输出
+  recursive: true  # 是否递归扫描 input_dir 下的子目录
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]  # 识别为图片的扩展名列表；当前样例保留 jpg/jpeg/png/heic
+  video_exts: [".mp4", ".mov"]  # 识别为视频的扩展名列表；当前常用默认是 .mp4/.mov
+  output_ext: ".png"  # 所有导出图像统一保存成什么格式；可选任意图片扩展名，当前最推荐 .png
 
-pipeline:
+pipeline:  # 本次要运行哪些阶段
   stages:
-    - frame_select
-    - align
+    - frame_select  # 阶段一：从 MP4 中抽取与静态图最相似的一帧；合法值只有 frame_select/align/color_match
+    - align  # 阶段二：让 LR 在几何位置上尽量对齐到 HR；合法值只有 frame_select/align/color_match
 
-frame_select:
-  algorithm: dinov2_similarity
-  device: auto
-  sample_fps: 15
-  top_k: 5
-  batch_size: 8
-  resize_short_side: 518
-  score_fusion:
-    feature_weight: 0.7
-    edge_weight: 0.3
+frame_select:  # 阶段一：抽帧匹配配置
+  algorithm: dinov2_similarity  # 抽帧算法；当前可选 opencv_similarity / dinov2_similarity / fake_selector
+  device: auto  # 抽帧阶段运行设备；常用可填 cpu / auto / cuda，auto 会优先尝试可用 GPU
+  sample_fps: 15  # 候选帧采样频率：每秒取多少帧参与匹配；建议 > 0，常用 5~30
+  top_k: 5  # 记录前 K 个最优候选帧到 metadata；建议 >= 1，常用 1~10
+  batch_size: 8  # 阶段一内部批量处理大小；建议 >= 1，常用 4~32
+  resize_short_side: 518  # 做相似度计算前，把图像短边统一缩放到这个尺寸附近；建议 >= 32，常用 256~640
+  score_fusion:  # dinov2_similarity 可选分数融合参数
+    feature_weight: 0.7  # 特征相似度权重；建议 0.0~1.0
+    edge_weight: 0.3  # 边缘结构相似度权重；建议 0.0~1.0
 
-align:
-  enabled: true
-  algorithm: mask_aware_alignment
-  device: cpu
-  output_folder: LR_aligned_tier4
-  confidence_threshold: 0.25
-  fallback_algorithm: phase_correlation_translation
-  on_failure: keep_original
-  coarse_algorithm: phase_correlation_translation
-  phase_correlation:
-    resize_short_side: 512
-  mask_aware:
-    motion_model: translation
-    difference_threshold: 18.0
-    min_mask_fraction: 0.015
-    blend_blur_ksize: 9
-    morphology_kernel_size: 5
+align:  # 阶段二：几何对齐配置
+  enabled: true  # 是否开启对齐阶段
+  algorithm: mask_aware_alignment  # 主对齐算法；当前可选 identity_alignment / phase_correlation_translation / ecc_alignment / coarse_to_flow / global_ecc_homography / feature_match_transform / feature_match_homography / hybrid_feature_flow / mask_aware_alignment
+  device: cpu  # 对齐阶段运行设备；常用可填 cpu / auto / cuda，这个样例默认走 cpu
+  output_folder: LR_aligned_tier4  # 对齐后的 LR 输出目录名；必须是 output_dir 下的单层安全目录名
+  confidence_threshold: 0.25  # 对齐置信度阈值；建议 >= 0，常用 0.0~1.0，越大越严格
+  fallback_algorithm: phase_correlation_translation  # 主算法失败时的兜底对齐算法；可选值通常与 align.algorithm 同一批算法名一致
+  on_failure: keep_original  # 对齐失败后的处理策略；当前常用 keep_original / skip。keep_original=写入原始 LR 占位，skip=不写阶段二输出图
+  coarse_algorithm: phase_correlation_translation  # mask_aware_alignment 内部使用的粗对齐算法；常见可选 phase_correlation_translation / ecc_alignment / feature_match_transform / identity_alignment
+  phase_correlation:  # phase_correlation_translation 相关参数
+    resize_short_side: 512  # 做相位相关前的缩放短边；建议 >= 32，常用 256~1024
+  mask_aware:  # mask_aware_alignment 专属参数
+    motion_model: translation  # 局部前景几何模型；当前常用 translation
+    difference_threshold: 18.0  # 生成前景差异掩码的阈值；建议 >= 0，常用 5~50
+    min_mask_fraction: 0.015  # 最小有效掩码占比；建议 0.0~1.0，常用 0.005~0.2
+    blend_blur_ksize: 9  # 掩码边缘混合模糊核大小；建议 >= 1，常用奇数 3~21
+    morphology_kernel_size: 5  # 形态学操作核大小；建议 >= 1，常用 3~11
 
-report:
-  enabled: true
-  output_folder: reports_tier4
-  aligned_folder: LR_aligned_tier4
-  color_matched_folder: LR_color_matched
-  max_preview_samples: 12
-  thumbnail_size: 160
+report:  # 质量报告生成配置
+  enabled: true  # 是否生成质量报告
+  output_folder: reports_tier4  # 报告输出目录名；必须是 output_dir 下的单层安全目录名
+  aligned_folder: LR_aligned_tier4  # 报告中“aligned”那一路图像对应的目录名；必须是单层目录名
+  color_matched_folder: LR_color_matched  # 报告中“color_matched”那一路图像对应的目录名；本例未跑阶段三，但列名会保留
+  max_preview_samples: 12  # 预览拼图里最多展示多少个样本；建议 >= 0，常用 4~32
+  thumbnail_size: 160  # 预览图缩略图尺寸；建议 >= 32，常用 96~320
 
-output:
-  save_metadata: true
-  overwrite: true
+output:  # 输出行为配置
+  save_metadata: true  # 是否保存每个样本的 metadata YAML，里面会记录 top-k、对齐信息、质量指标等
+  overwrite: true  # 如果目标文件已存在，是否允许覆盖重写

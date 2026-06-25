@@ -1,27 +1,27 @@
-task:
-  name: heic_livephoto_frame_select
-  seed: 42
+task:  # 任务级配置：定义这次运行的名称和可复现随机种子
+  name: heic_livephoto_frame_select  # 任务名，会写入 run_summary，方便区分这次跑的是哪套配置
+  seed: 42  # 随机种子；建议为整数，改了之后会影响带随机性的流程复现结果
 
-data:
-  input_dir: D:/SR数据集/HEIC_livephoto
-  output_dir: D:/repository/livePhoto2LRHR/real_smoke/heic_livephoto_smoke/output
-  recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]
-  video_exts: [".mp4", ".mov"]
-  output_ext: ".png"
+data:  # 输入输出数据配置
+  input_dir: D:/SR数据集/HEIC_livephoto  # 输入数据根目录：按“同名图片 + 同名视频”自动配对；这里是 HEIC LivePhoto 测试集
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/heic_livephoto_smoke/output  # 本次运行的总输出目录；所有阶段产物、metadata、summary 都会落在这里
+  recursive: true  # 是否递归扫描 input_dir 下的子目录
+  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]  # 识别为图片的扩展名列表；HEIC/HEIF 测试时建议保留 .heic/.heif
+  video_exts: [".mp4", ".mov"]  # 识别为视频的扩展名列表；当前常用默认是 .mp4/.mov
+  output_ext: ".png"  # 所有导出图像统一保存成什么格式；可选任意图片扩展名，当前最推荐 .png
 
-pipeline:
+pipeline:  # 本次要运行哪些阶段
   stages:
-    - frame_select
+    - frame_select  # 阶段一：从 MP4/MOV 中抽取与静态图最相似的一帧；合法值只有 frame_select/align/color_match
 
-frame_select:
-  algorithm: opencv_similarity
-  device: cpu
-  sample_fps: 10
-  top_k: 5
-  batch_size: 8
-  resize_short_side: 512
+frame_select:  # 阶段一：抽帧匹配配置
+  algorithm: opencv_similarity  # 抽帧算法；当前可选 opencv_similarity / dinov2_similarity / fake_selector
+  device: cpu  # 抽帧阶段运行设备；常用可填 cpu / auto / cuda，这个 HEIC smoke 例子走 cpu 最稳
+  sample_fps: 10  # 候选帧采样频率：每秒取多少帧参与匹配；建议 > 0，常用 5~30
+  top_k: 5  # 记录前 K 个最优候选帧到 metadata；建议 >= 1，常用 1~10
+  batch_size: 8  # 阶段一内部批量处理大小；建议 >= 1，常用 4~32
+  resize_short_side: 512  # 做相似度计算前，把图像短边统一缩放到这个尺寸附近；建议 >= 32，常用 256~640
 
-output:
-  save_metadata: true
-  overwrite: true
+output:  # 输出行为配置
+  save_metadata: true  # 是否保存每个样本的 metadata YAML，里面会记录 top-k、最佳帧索引、分数等
+  overwrite: true  # 如果目标文件已存在，是否允许覆盖重写

@@ -1,61 +1,61 @@
-﻿task:
-  name: flower_quality_demo
-  seed: 42
+task:  # 任务级配置：定义这次运行的名称和可复现随机种子
+  name: flower_quality_demo  # 任务名，会写入 run_summary，方便区分这次跑的是哪套配置
+  seed: 42  # 随机种子；建议为整数，改了之后会影响带随机性的流程复现结果
 
-data:
-  input_dir: D:/repository/livePhoto2LRHR/real_smoke/flower_quality_demo/input
-  output_dir: D:/repository/livePhoto2LRHR/real_smoke/flower_quality_demo/output
-  recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic"]
-  video_exts: [".mp4", ".mov"]
-  output_ext: ".png"
+data:  # 输入输出数据配置
+  input_dir: D:/repository/livePhoto2LRHR/real_smoke/flower_quality_demo/input  # 输入数据根目录：按“同名图片 + 同名视频”自动配对；这里是花朵质检演示样例
+  output_dir: D:/repository/livePhoto2LRHR/real_smoke/flower_quality_demo/output  # 本次运行的总输出目录；阶段输出、报告、最终导出都在这里
+  recursive: true  # 是否递归扫描 input_dir 下的子目录
+  image_exts: [".jpg", ".jpeg", ".png", ".heic"]  # 识别为图片的扩展名列表；当前样例保留 jpg/jpeg/png/heic
+  video_exts: [".mp4", ".mov"]  # 识别为视频的扩展名列表；当前常用默认是 .mp4/.mov
+  output_ext: ".png"  # 所有导出图像统一保存成什么格式；可选任意图片扩展名，当前最推荐 .png
 
-pipeline:
+pipeline:  # 本次要运行哪些阶段
   stages:
-    - frame_select
-    - align
+    - frame_select  # 阶段一：从 MP4 中抽取与静态图最相似的一帧；合法值只有 frame_select/align/color_match
+    - align  # 阶段二：让 LR 在几何位置上尽量对齐到 HR；合法值只有 frame_select/align/color_match
 
-frame_select:
-  algorithm: opencv_similarity
-  device: cpu
-  sample_fps: 10
-  top_k: 5
-  batch_size: 8
-  resize_short_side: 518
+frame_select:  # 阶段一：抽帧匹配配置
+  algorithm: opencv_similarity  # 抽帧算法；当前可选 opencv_similarity / dinov2_similarity / fake_selector
+  device: cpu  # 抽帧阶段运行设备；常用可填 cpu / auto / cuda，这个花朵 demo 走 cpu 最稳
+  sample_fps: 10  # 候选帧采样频率：每秒取多少帧参与匹配；建议 > 0，常用 5~30
+  top_k: 5  # 记录前 K 个最优候选帧到 metadata；建议 >= 1，常用 1~10
+  batch_size: 8  # 阶段一内部批量处理大小；建议 >= 1，常用 4~32
+  resize_short_side: 518  # 做相似度计算前，把图像短边统一缩放到这个尺寸附近；建议 >= 32，常用 256~640
 
-align:
-  enabled: true
-  algorithm: coarse_to_flow
-  device: cpu
-  output_folder: LR_aligned_flow
-  confidence_threshold: 0.0
-  fallback_algorithm: identity_alignment
-  on_failure: keep_original
-  coarse_algorithm: phase_correlation_translation
-  optical_flow:
-    enabled: true
-    algorithm: dis
+align:  # 阶段二：几何对齐配置
+  enabled: true  # 是否开启对齐阶段
+  algorithm: coarse_to_flow  # 主对齐算法；当前可选 identity_alignment / phase_correlation_translation / ecc_alignment / coarse_to_flow / global_ecc_homography / feature_match_transform / feature_match_homography / hybrid_feature_flow / mask_aware_alignment
+  device: cpu  # 对齐阶段运行设备；常用可填 cpu / auto / cuda，这个花朵 demo 走 cpu 最稳
+  output_folder: LR_aligned_flow  # 对齐后的 LR 输出目录名；必须是 output_dir 下的单层安全目录名
+  confidence_threshold: 0.0  # 对齐置信度阈值；建议 >= 0，常用 0.0~1.0，越大越严格
+  fallback_algorithm: identity_alignment  # 主算法失败时的兜底对齐算法；可选值通常与 align.algorithm 同一批算法名一致
+  on_failure: keep_original  # 对齐失败后的处理策略；当前常用 keep_original / skip。keep_original=写入原始 LR 占位，skip=不写阶段二输出图
+  coarse_algorithm: phase_correlation_translation  # coarse_to_flow 内部使用的粗对齐算法；常见可选 phase_correlation_translation / ecc_alignment / feature_match_transform / identity_alignment
+  optical_flow:  # 光流细化子配置
+    enabled: true  # 是否开启光流细化
+    algorithm: dis  # 光流算法；当前实现可选 dis / farneback
 
-report:
-  enabled: true
-  output_folder: reports_flow
-  aligned_folder: LR_aligned_flow
-  color_matched_folder: LR_color_matched
-  max_preview_samples: 4
-  thumbnail_size: 160
+report:  # 质量报告生成配置
+  enabled: true  # 是否生成质量报告
+  output_folder: reports_flow  # 报告输出目录名；必须是 output_dir 下的单层安全目录名
+  aligned_folder: LR_aligned_flow  # 报告中“aligned”那一路图像对应的目录名；必须是单层目录名
+  color_matched_folder: LR_color_matched  # 报告中“color_matched”那一路图像对应的目录名；本例未跑阶段三，但列名会保留
+  max_preview_samples: 4  # 预览拼图里最多展示多少个样本；建议 >= 0，常用 4~32
+  thumbnail_size: 160  # 预览图缩略图尺寸；建议 >= 32，常用 96~320
 
-export:
-  enabled: true
-  input_report: reports_flow/quality_report.csv
-  output_folder: final_flow
-  final_lr_source: raw
-  gate_lr_source: aligned
-  final_lr_resize_mode: copy
-  require_align_status: success
-  max_source_to_hr_mae: 80.0
-  min_source_to_hr_psnr: 4.0
-  require_source_to_hr_aspect_ratio_match: true
+export:  # 最终训练集导出配置
+  enabled: true  # 是否根据报告和门槛，导出最终可训练的 LR/HR
+  input_report: reports_flow/quality_report.csv  # 导出阶段读取哪份质量报告作为筛选依据；必须是相对 output_dir 的路径
+  output_folder: final_flow  # 最终训练集输出目录名；必须是 output_dir 下的单层安全目录名
+  final_lr_source: raw  # 最终写进训练集 LR/ 的来源；合法值只有 raw / aligned / color_matched
+  gate_lr_source: aligned  # 做质量门槛判断时，使用哪一路 LR 与 HR 比较；合法值只有 raw / aligned / color_matched
+  final_lr_resize_mode: copy  # 最终 LR 导出倍率/模式；合法值只有 copy / raw / match_raw / 1.0 / 0.75 / 0.5。copy=保留 final_lr_source 当前尺寸
+  require_align_status: success  # 只允许哪些 align 状态进入最终训练集；当前常用 success，也可留空/None 表示不限制
+  max_source_to_hr_mae: 80.0  # 质量门槛：LR 到 HR 的 MAE 上限；建议 >= 0，越小越严格
+  min_source_to_hr_psnr: 4.0  # 质量门槛：LR 到 HR 的 PSNR 下限；建议 >= 0，越大越严格
+  require_source_to_hr_aspect_ratio_match: true  # 质量门槛：LR 和 HR 的宽高比必须一致
 
-output:
-  save_metadata: true
-  overwrite: true
+output:  # 输出行为配置
+  save_metadata: true  # 是否保存每个样本的 metadata YAML，里面会记录 top-k、对齐信息、导出诊断等
+  overwrite: true  # 如果目标文件已存在，是否允许覆盖重写

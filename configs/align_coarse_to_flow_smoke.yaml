@@ -1,50 +1,50 @@
-task:
-  name: livephoto_align_coarse_to_flow_smoke
-  seed: 42
+task:  # 任务级配置：定义本次运行名称和可复现随机种子
+  name: livephoto_align_coarse_to_flow_smoke  # 任务名，会写入 run_summary，方便区分这次跑的是哪套 smoke 配置
+  seed: 42  # 随机种子；建议为整数，改了之后会影响带随机性的流程复现结果
 
-data:
-  input_dir: D:/SR数据集/花
-  output_dir: D:/SR数据集/花_pairs
-  recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]
-  video_exts: [".mp4", ".mov"]
-  output_ext: ".png"
+data:  # 输入输出数据配置
+  input_dir: D:/SR数据集/花  # 输入数据根目录；必须是存在的目录，程序会按“同名图片 + 同名视频”自动配对
+  output_dir: D:/SR数据集/花_pairs  # 本次运行的总输出目录；可写绝对路径，所有阶段产物都落在这里
+  recursive: true  # 是否递归扫描 input_dir 下的子目录
+  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]  # 识别为图片的扩展名列表；可填任意带点扩展名，当前常用默认是 .jpg/.jpeg/.png/.heic/.heif
+  video_exts: [".mp4", ".mov"]  # 识别为视频的扩展名列表；可填任意带点扩展名，当前常用默认是 .mp4/.mov
+  output_ext: ".png"  # 所有导出图像统一保存成什么格式；可填任意图片扩展名，当前最推荐 .png
 
-pipeline:
+pipeline:  # 本次要运行哪些阶段
   stages:
-    - align
+    - align  # 阶段二：几何对齐；合法值只有 frame_select/align/color_match
 
-frame_select:
-  algorithm: dinov2_similarity
+frame_select:  # 阶段一配置仍需存在，因为 schema 要求提供 frame_select.algorithm
+  algorithm: dinov2_similarity  # 抽帧算法；当前可选 opencv_similarity / dinov2_similarity / fake_selector
 
-align:
-  enabled: true
-  algorithm: coarse_to_flow
-  device: cpu
-  output_folder: LR_aligned_flow
-  confidence_threshold: 0.3
-  fallback_algorithm: identity_alignment
-  on_failure: keep_original
-  coarse_algorithm: phase_correlation_translation
-  phase_correlation:
-    resize_short_side: 512
-  ecc:
-    motion_model: affine
-    number_of_iterations: 100
-    termination_eps: 1.0e-5
-    gaussian_filter_size: 5
-  optical_flow:
-    enabled: true
-    algorithm: dis
+align:  # 阶段二：几何对齐配置
+  enabled: true  # 是否开启对齐阶段
+  algorithm: coarse_to_flow  # 主对齐算法；当前可选 identity_alignment / phase_correlation_translation / ecc_alignment / coarse_to_flow / global_ecc_homography / feature_match_transform / feature_match_homography / hybrid_feature_flow / mask_aware_alignment
+  device: cpu  # 对齐阶段运行设备；常用可填 cpu / auto / cuda，具体是否真走 GPU 取决于算法实现
+  output_folder: LR_aligned_flow  # 对齐后的 LR 输出目录名；必须是 output_dir 下的单层安全目录名，不能写绝对路径
+  confidence_threshold: 0.3  # 对齐置信度阈值；建议 >= 0，常用 0.0~1.0，越大越严格
+  fallback_algorithm: identity_alignment  # 主算法失败时的兜底对齐算法；可选值通常与 align.algorithm 同一批算法名一致
+  on_failure: keep_original  # 对齐失败后的处理策略；当前常用 keep_original / skip。keep_original=写入原始 LR 占位，skip=不写阶段二输出图
+  coarse_algorithm: phase_correlation_translation  # coarse_to_flow / hybrid_feature_flow / mask_aware 等算法内部使用的粗对齐算法；常见可选 phase_correlation_translation / ecc_alignment / feature_match_transform / identity_alignment
+  phase_correlation:  # phase_correlation_translation 相关参数
+    resize_short_side: 512  # 做相位相关前的缩放短边；建议 >= 32，常用 256~1024
+  ecc:  # ecc_alignment / global_ecc_homography 相关参数
+    motion_model: affine  # ECC 几何模型；当前常用 affine / homography
+    number_of_iterations: 100  # ECC 最大迭代次数；建议 >= 1，常用 50~500
+    termination_eps: 1.0e-5  # ECC 提前停止阈值；建议 > 0，常用 1e-6~1e-3
+    gaussian_filter_size: 5  # ECC 高斯平滑核大小；建议 >= 1，常用奇数 3~9
+  optical_flow:  # 光流细化子配置
+    enabled: true  # 是否开启光流细化
+    algorithm: dis  # 光流算法；当前实现可选 dis / farneback
 
-report:
-  enabled: true
-  output_folder: reports_flow
-  aligned_folder: LR_aligned_flow
-  color_matched_folder: LR_color_matched
-  max_preview_samples: 21
-  thumbnail_size: 160
+report:  # 质量报告生成配置
+  enabled: true  # 是否生成质量报告
+  output_folder: reports_flow  # 报告输出目录名；必须是 output_dir 下的单层安全目录名
+  aligned_folder: LR_aligned_flow  # 报告中“aligned”那一路图像对应的目录名；必须是单层目录名
+  color_matched_folder: LR_color_matched  # 报告中“color_matched”那一路图像对应的目录名；必须是单层目录名
+  max_preview_samples: 21  # 预览拼图里最多展示多少个样本；建议 >= 0，常用 4~32
+  thumbnail_size: 160  # 预览图缩略图尺寸；建议 >= 32，常用 96~320
 
-output:
-  save_metadata: true
-  overwrite: true
+output:  # 输出行为配置
+  save_metadata: true  # 是否保存每个样本的 metadata YAML，里面会记录诊断信息、变换参数等
+  overwrite: true  # 如果目标文件已存在，是否允许覆盖重写

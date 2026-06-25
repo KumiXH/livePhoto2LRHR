@@ -1,31 +1,31 @@
-task:
-  name: livephoto_align_identity_smoke
-  seed: 42
+task:  # 任务级配置：定义本次运行名称和可复现随机种子
+  name: livephoto_align_identity_smoke  # 任务名，会写入 run_summary，方便区分这次跑的是哪套 smoke 配置
+  seed: 42  # 随机种子；建议为整数，改了之后会影响带随机性的流程复现结果
 
-data:
-  input_dir: D:/SR数据集/花
-  output_dir: D:/SR数据集/花_pairs
-  recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]
-  video_exts: [".mp4", ".mov"]
-  output_ext: ".png"
+data:  # 输入输出数据配置
+  input_dir: D:/SR数据集/花  # 输入数据根目录；必须是存在的目录，程序会按“同名图片 + 同名视频”自动配对
+  output_dir: D:/SR数据集/花_pairs  # 本次运行的总输出目录；可写绝对路径，所有阶段产物都落在这里
+  recursive: true  # 是否递归扫描 input_dir 下的子目录
+  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]  # 识别为图片的扩展名列表；可填任意带点扩展名，当前常用默认是 .jpg/.jpeg/.png/.heic/.heif
+  video_exts: [".mp4", ".mov"]  # 识别为视频的扩展名列表；可填任意带点扩展名，当前常用默认是 .mp4/.mov
+  output_ext: ".png"  # 所有导出图像统一保存成什么格式；可填任意图片扩展名，当前最推荐 .png
 
-pipeline:
+pipeline:  # 本次要运行哪些阶段
   stages:
-    - align
+    - align  # 阶段二：几何对齐；合法值只有 frame_select/align/color_match
 
-frame_select:
-  algorithm: dinov2_similarity
+frame_select:  # 阶段一配置仍需存在，因为 schema 要求提供 frame_select.algorithm
+  algorithm: dinov2_similarity  # 抽帧算法；当前可选 opencv_similarity / dinov2_similarity / fake_selector
 
-align:
-  enabled: true
-  algorithm: identity_alignment
-  device: cpu
-  output_folder: LR_aligned
-  confidence_threshold: 0.3
-  fallback_algorithm: identity_alignment
-  on_failure: keep_original
+align:  # 阶段二：几何对齐配置
+  enabled: true  # 是否开启对齐阶段
+  algorithm: identity_alignment  # 主对齐算法；当前可选 identity_alignment / phase_correlation_translation / ecc_alignment / coarse_to_flow / global_ecc_homography / feature_match_transform / feature_match_homography / hybrid_feature_flow / mask_aware_alignment
+  device: cpu  # 对齐阶段运行设备；常用可填 cpu / auto / cuda，具体是否真走 GPU 取决于算法实现
+  output_folder: LR_aligned  # 对齐后的 LR 输出目录名；必须是 output_dir 下的单层安全目录名，不能写绝对路径
+  confidence_threshold: 0.3  # 对齐置信度阈值；建议 >= 0，常用 0.0~1.0，越大越严格
+  fallback_algorithm: identity_alignment  # 主算法失败时的兜底对齐算法；可选值通常与 align.algorithm 同一批算法名一致
+  on_failure: keep_original  # 对齐失败后的处理策略；当前常用 keep_original / skip。keep_original=写入原始 LR 占位，skip=不写阶段二输出图
 
-output:
-  save_metadata: true
-  overwrite: true
+output:  # 输出行为配置
+  save_metadata: true  # 是否保存每个样本的 metadata YAML，里面会记录诊断信息、变换参数等
+  overwrite: true  # 如果目标文件已存在，是否允许覆盖重写

@@ -1,36 +1,36 @@
-task:
-  name: livephoto_export_final_verify
-  seed: 42
+task:  # 任务级配置：定义本次运行名称和可复现随机种子
+  name: livephoto_export_final_verify  # 任务名，会写入 run_summary，方便区分这次跑的是哪套 verify 配置
+  seed: 42  # 随机种子；建议为整数，改了之后会影响带随机性的流程复现结果
 
-data:
-  input_dir: D:/SR数据集/花
-  output_dir: D:/SR数据集/花_pairs
-  recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]
-  video_exts: [".mp4", ".mov"]
-  output_ext: ".png"
+data:  # 输入输出数据配置
+  input_dir: D:/SR数据集/花  # 输入数据根目录；必须是存在的目录，程序会按“同名图片 + 同名视频”自动配对
+  output_dir: D:/SR数据集/花_pairs  # 本次运行的总输出目录；导出阶段会从这里读取 report 并写 final 目录
+  recursive: true  # 是否递归扫描 input_dir 下的子目录
+  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]  # 识别为图片的扩展名列表；可填任意带点扩展名
+  video_exts: [".mp4", ".mov"]  # 识别为视频的扩展名列表；可填任意带点扩展名
+  output_ext: ".png"  # 所有导出图像统一保存成什么格式；可填任意图片扩展名，当前最推荐 .png
 
-pipeline:
-  stages: []
+pipeline:  # 本次要运行哪些阶段
+  stages: []  # 空列表表示不跑任何前置阶段，只做 export verify
 
-frame_select:
-  algorithm: dinov2_similarity
+frame_select:  # 阶段一配置仍需存在，因为 schema 要求提供 frame_select.algorithm
+  algorithm: dinov2_similarity  # 抽帧算法；当前可选 opencv_similarity / dinov2_similarity / fake_selector
 
-report:
-  enabled: false
+report:  # 质量报告配置：这里显式关闭，因为 export 会直接读取已有 report
+  enabled: false  # 是否生成质量报告；这里关闭是因为这份配置只做导出验证
 
-export:
-  enabled: true
-  input_report: reports_flow/quality_report.csv
-  output_folder: final_flow_verify
-  final_lr_source: raw
-  gate_lr_source: aligned
-  final_lr_resize_mode: copy
-  min_align_confidence: 0.3
-  require_align_status: success
-  require_flow_status: accepted
-  max_source_to_hr_mae: 30.0
+export:  # 最终训练集导出配置
+  enabled: true  # 是否根据报告和门槛，导出最终可训练的 LR/HR
+  input_report: reports_flow/quality_report.csv  # 导出阶段读取哪份质量报告作为筛选依据；必须是相对 output_dir 的路径，且文件名必须叫 quality_report.csv
+  output_folder: final_flow_verify  # 最终训练集输出目录名；必须是 output_dir 下的单层安全目录名
+  final_lr_source: raw  # 最终写进训练集 LR/ 的来源；合法值只有 raw / aligned / color_matched
+  gate_lr_source: aligned  # 做质量门槛判断时，使用哪一路 LR 与 HR 比较；合法值只有 raw / aligned / color_matched
+  final_lr_resize_mode: copy  # 最终 LR 导出倍率/模式；合法值只有 copy / raw / match_raw / 1.0 / 0.75 / 0.5
+  min_align_confidence: 0.3  # 导出门槛：最小对齐置信度；建议 >= 0，常用 0.0~1.0
+  require_align_status: success  # 只允许哪些 align 状态进入最终训练集；当前常用 success，也可留空/None 表示不限制
+  require_flow_status: accepted  # 只允许哪些光流状态进入最终训练集；常用 accepted，也可留空/None 表示不限制
+  max_source_to_hr_mae: 30.0  # 质量门槛：LR 到 HR 的 MAE 上限；建议 >= 0，越小越严格
 
-output:
-  save_metadata: true
-  overwrite: true
+output:  # 输出行为配置
+  save_metadata: true  # 是否保存每个样本的 metadata YAML
+  overwrite: true  # 如果目标文件已存在，是否允许覆盖重写

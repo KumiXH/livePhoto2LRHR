@@ -1,43 +1,43 @@
-task:
-  name: livephoto_color_match_smoke
-  seed: 42
+task:  # 任务级配置：定义本次运行名称和可复现随机种子
+  name: livephoto_color_match_smoke  # 任务名，会写入 run_summary，方便区分这次跑的是哪套 smoke 配置
+  seed: 42  # 随机种子；建议为整数，改了之后会影响带随机性的流程复现结果
 
-data:
-  input_dir: D:/SR数据集/花
-  output_dir: D:/SR数据集/花_pairs
-  recursive: true
-  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]
-  video_exts: [".mp4", ".mov"]
-  output_ext: ".png"
+data:  # 输入输出数据配置
+  input_dir: D:/SR数据集/花  # 输入数据根目录；必须是存在的目录，程序会按“同名图片 + 同名视频”自动配对
+  output_dir: D:/SR数据集/花_pairs  # 本次运行的总输出目录；可写绝对路径，所有阶段产物都落在这里
+  recursive: true  # 是否递归扫描 input_dir 下的子目录
+  image_exts: [".jpg", ".jpeg", ".png", ".heic", ".heif"]  # 识别为图片的扩展名列表；可填任意带点扩展名，当前常用默认是 .jpg/.jpeg/.png/.heic/.heif
+  video_exts: [".mp4", ".mov"]  # 识别为视频的扩展名列表；可填任意带点扩展名，当前常用默认是 .mp4/.mov
+  output_ext: ".png"  # 所有导出图像统一保存成什么格式；可填任意图片扩展名，当前最推荐 .png
 
-pipeline:
+pipeline:  # 本次要运行哪些阶段
   stages:
-    - color_match
+    - color_match  # 阶段三：亮度/颜色对齐；合法值只有 frame_select/align/color_match
 
-frame_select:
-  algorithm: dinov2_similarity
+frame_select:  # 阶段一配置仍需存在，因为 schema 要求提供 frame_select.algorithm
+  algorithm: dinov2_similarity  # 抽帧算法；当前可选 opencv_similarity / dinov2_similarity / fake_selector
 
-align:
-  enabled: false
+align:  # 阶段二配置：这里显式关闭
+  enabled: false  # 是否开启对齐阶段；这里关闭是因为这是纯调色 smoke
 
-color_match:
-  enabled: true
-  algorithm: mean_std_lab
-  device: cpu
-  input_folder: auto
-  output_folder: LR_color_matched
-  confidence_threshold: 0.0
-  on_failure: keep_original
-  mean_std:
-    color_space: lab
-    eps: 1.0e-6
+color_match:  # 阶段三：亮度/颜色对齐配置
+  enabled: true  # 是否开启调色阶段
+  algorithm: mean_std_lab  # 调色算法；当前可选 identity_color_match / mean_std_lab / histogram_match_lab / retinex_color_match / masked_color_transfer / image_adaptive_3d_lut_color_match / low_frequency_joint_appearance_match / learned_retinex_color_match / mask_aware_harmonization_network / diffusion_harmonization
+  device: cpu  # 调色阶段运行设备；常用可填 cpu / auto / cuda，具体是否真走 GPU 取决于算法实现
+  input_folder: auto  # 调色输入来源；可填 auto 或 output_dir 下某个单层 LR 类目录名。auto 通常优先接阶段二输出
+  output_folder: LR_color_matched  # 调色后的 LR 输出目录名；必须是 output_dir 下的单层安全目录名，不能写绝对路径
+  confidence_threshold: 0.0  # 调色置信度阈值；建议 >= 0，常用 0.0~1.0，越大越严格
+  on_failure: keep_original  # 调色失败后的处理策略；当前常用 keep_original / skip。keep_original=保留输入图，skip=不写阶段三输出图
+  mean_std:  # mean_std_lab 专属参数
+    color_space: lab  # 颜色空间；当前默认和最常用的是 lab
+    eps: 1.0e-6  # 防止除零的小常数；建议 > 0，常用 1e-8~1e-3
 
-report:
-  enabled: true
-  output_folder: reports
-  max_preview_samples: 21
-  thumbnail_size: 160
+report:  # 质量报告生成配置
+  enabled: true  # 是否生成质量报告
+  output_folder: reports  # 报告输出目录名；必须是 output_dir 下的单层安全目录名
+  max_preview_samples: 21  # 预览拼图里最多展示多少个样本；建议 >= 0，常用 4~32
+  thumbnail_size: 160  # 预览图缩略图尺寸；建议 >= 32，常用 96~320
 
-output:
-  save_metadata: true
-  overwrite: true
+output:  # 输出行为配置
+  save_metadata: true  # 是否保存每个样本的 metadata YAML，里面会记录诊断信息、变换参数等
+  overwrite: true  # 如果目标文件已存在，是否允许覆盖重写
